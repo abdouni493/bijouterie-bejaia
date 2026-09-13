@@ -5,7 +5,7 @@ import { translations } from '../../i18n/translations';
 import { Trash2, Edit2, Printer, Eye, Plus, X, DollarSign, ArrowLeftRight } from 'lucide-react';
 
 const Replacements: React.FC = () => {
-  const { replacements, addReplacement, updateReplacement, deleteReplacement, metalTypes, shapes, deliveries, language, addPaymentAction, categoryLabel } = useApp();
+  const { replacements, addReplacement, updateReplacement, deleteReplacement, metalTypes, shapes, deliveries, language, addPaymentAction, categoryLabel, can } = useApp();
   const t = translations[language];
   const shouldReduce = useReducedMotion();
 
@@ -275,7 +275,7 @@ const Replacements: React.FC = () => {
                     <button onClick={() => setSelectedDetailsId(r.id)} className="btn-icon" title={t.details}><Eye size={14} /></button>
                     <button onClick={() => { /* TODO: Print invoice */ }} className="btn-icon" title={t.print}><Printer size={14} /></button>
                     <button onClick={() => startEdit(r.id)} className="btn-icon" title={t.edit}><Edit2 size={14} /></button>
-                    <button onClick={() => setDeleteTargetId(r.id)} className="btn-icon danger" title={t.delete}><Trash2 size={14} /></button>
+                    <button onClick={() => setDeleteTargetId(r.id)} style={can('replacements.delete') ? undefined : { display: 'none' }} className="btn-icon danger" title={t.delete}><Trash2 size={14} /></button>
                   </div>
                 </div>
                 <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--silver-100)', margin: 0 }}>{r.clientName || ''}</h3>

@@ -10,7 +10,7 @@ import DebtPaymentsHistory, { DebtHistoryRow } from '../finance/DebtPaymentsHist
 const Suppliers: React.FC = () => {
   const {
     suppliers, addSupplier, updateSupplier, deleteSupplier, purchases, language,
-    debtPayments, updateDebtPayment, deleteDebtPayment, settings,
+    debtPayments, updateDebtPayment, deleteDebtPayment, settings, can,
   } = useApp();
   const t = translations[language];
   const shouldReduce = useReducedMotion();
@@ -196,6 +196,7 @@ const Suppliers: React.FC = () => {
                 </button>
                 <button
                   onClick={() => { if (confirm(t.delete + ' ?')) deleteSupplier(s.id); }}
+                  style={can('suppliers.delete') ? undefined : { display: 'none' }}
                   className="btn-icon danger"
                   title={t.delete}
                 >

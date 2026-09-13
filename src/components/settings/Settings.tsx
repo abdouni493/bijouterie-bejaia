@@ -5,6 +5,7 @@ import { Languages, Database, Shield, Save, User as UserIcon, Lock, Sparkle, X, 
 import { useApp } from '../../context/AppContext';
 import { translations } from '../../i18n/translations';
 import { Language, StoreSettings } from '../../types';
+import { uploadImage, BUCKETS, supabase } from '../../lib/supabase';
 
 type SettingsTab = 'store' | 'account' | 'website' | 'database';
 
@@ -222,12 +223,15 @@ const Settings: React.FC = () => {
     flash('Informations du magasin enregistrées');
   };
 
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /** The logo is uploaded to the `store-logos` bucket; only its URL is saved. */
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setLogoPreview(reader.result as string);
-    reader.readAsDataURL(file);
+    try {
+      setLogoPreview(await uploadImage(BUCKETS.logos, file));
+    } catch (err: any) {
+      flash(err?.message || "Échec de l'envoi du logo", true);
+    }
   };
 
   // ---- Account form (admin) ----
@@ -244,28 +248,43 @@ const Settings: React.FC = () => {
       flash('Aucune modification à enregistrer', true);
       return;
     }
+
+    // These are real credentials on the Supabase account, not local fields.
+    const { error } = await supabase.auth.updateUser(updates);
+    if (error) {
+      flash(error.message, true);
+      return;
+    }
+
     if (updates.email) {
+      await supabase.from('profiles').update({ email: updates.email }).eq('id', user!.id);
       setCurrentEmail(updates.email);
       if (user) setUser({ ...user, email: updates.email });
     }
+
     setNewEmail('');
     setNewPassword('');
     setConfirmPassword('');
-    flash('Compte mis à jour avec succès');
+    flash(updates.email
+      ? 'Compte mis à jour. Un email de confirmation a pu être envoyé à la nouvelle adresse.'
+      : 'Compte mis à jour avec succès');
   };
 
   // ---- Account form (worker) ----
-  const handleWorkerAccountSave = (e: React.FormEvent) => {
+  const handleWorkerAccountSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (workerPassword && workerPassword !== workerConfirmPassword) {
       flash('Les mots de passe ne correspondent pas', true);
       return;
     }
+
+    // An employee may change their own password on their own account.
+    if (workerPassword) {
+      const { error } = await supabase.auth.updateUser({ password: workerPassword });
+      if (error) { flash(error.message, true); return; }
+    }
     if (worker) {
-      updateWorker(worker.id, {
-        username: workerUsername || worker.username,
-        ...(workerPassword ? { password: workerPassword } : {}),
-      });
+      updateWorker(worker.id, { username: workerUsername || worker.username });
       setUser({ ...user!, username: workerUsername || user!.username });
     }
     setWorkerPassword('');

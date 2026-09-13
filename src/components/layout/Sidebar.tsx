@@ -40,65 +40,75 @@ const SectionLabel: React.FC<{ label: string; collapsed: boolean; delay?: number
 };
 
 const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isCollapsed, setIsCollapsed, onMobileClose }) => {
-  const { user, language, setUser, settings, theme } = useApp();
+  const { user, language, setUser, settings, theme, can } = useApp();
   const t = translations[language];
   const isAdmin = user?.role === 'admin';
   const shouldReduce = useReducedMotion();
 
+  // A tab is listed only when the signed-in user holds its `<module>.view`
+  // permission. An administrator holds every one, so they see the full menu;
+  // an employee sees exactly the screens ticked for them on the Employés page.
   const sections = [
     {
       label: 'GESTION',
       items: [
-        { id: 'dashboard', label: t.dashboard, icon: LayoutDashboard, show: true },
-        { id: 'pos', label: t.pos, icon: Calculator, show: true },
-        { id: 'inventory', label: t.inventory, icon: Package, show: isAdmin },
-        { id: 'replacements', label: t.replacements, icon: Repeat, show: true },
-        { id: 'clients', label: t.clients, icon: UserPlus, show: true },
+        { id: 'dashboard', label: t.dashboard, icon: LayoutDashboard },
+        { id: 'pos', label: t.pos, icon: Calculator },
+        { id: 'inventory', label: t.inventory, icon: Package },
+        { id: 'replacements', label: t.replacements, icon: Repeat },
+        { id: 'clients', label: t.clients, icon: UserPlus },
       ],
     },
     {
       label: 'FINANCES',
       items: [
-        { id: 'suppliers', label: t.suppliers, icon: Truck, show: isAdmin },
-        { id: 'purchases', label: t.purchases, icon: ShoppingCart, show: isAdmin },
-        { id: 'cassiePurchases', label: t.cassiePurchases || 'Cassie', icon: Flame, show: isAdmin },
-        { id: 'sellingInvoices', label: t.sellingInvoices, icon: FileText, show: true },
+        { id: 'suppliers', label: t.suppliers, icon: Truck },
+        { id: 'purchases', label: t.purchases, icon: ShoppingCart },
+        { id: 'cassiePurchases', label: t.cassiePurchases || 'Cassie', icon: Flame },
+        { id: 'sellingInvoices', label: t.sellingInvoices, icon: FileText },
       ],
     },
     {
       label: 'OPÉRATIONS',
       items: [
-        { id: 'workshops', label: t.workshops, icon: Warehouse, show: isAdmin },
-        { id: 'deliveries', label: t.deliveries, icon: Truck, show: isAdmin },
-        { id: 'commands', label: t.commands, icon: Wrench, show: isAdmin },
-        { id: 'workers', label: t.workers, icon: Users, show: isAdmin },
+        { id: 'workshops', label: t.workshops, icon: Warehouse },
+        { id: 'deliveries', label: t.deliveries, icon: Truck },
+        { id: 'commands', label: t.commands, icon: Wrench },
+        { id: 'workers', label: t.workers, icon: Users },
+        // The payslip screen is for employees; an admin has the Employés screen.
         { id: 'myPayroll', label: language === 'ar' ? 'مستحقاتي' : 'Mes Paiements', icon: CreditCard, show: !isAdmin },
       ],
     },
     {
       label: 'ANALYSE',
       items: [
-        { id: 'storeExpenses', label: t.storeExpenses, icon: Receipt, show: isAdmin },
-        { id: 'storeCash', label: language === 'ar' ? 'خزينة المتجر' : 'Trésorerie', icon: PiggyBank, show: isAdmin },
-        { id: 'debts', label: t.debts, icon: CreditCard, show: true },
-        { id: 'reports', label: t.reports, icon: BarChart, show: isAdmin },
+        { id: 'storeExpenses', label: t.storeExpenses, icon: Receipt },
+        { id: 'storeCash', label: language === 'ar' ? 'خزينة المتجر' : 'Trésorerie', icon: PiggyBank },
+        { id: 'debts', label: t.debts, icon: CreditCard },
+        { id: 'reports', label: t.reports, icon: BarChart },
       ],
     },
     {
       label: 'SITE WEB',
       items: [
-        { id: 'websiteManagement', label: language === 'ar' ? 'إدارة الموقع' : 'Gestion Site Web', icon: Globe, show: isAdmin },
-        { id: 'websiteOrders', label: language === 'ar' ? 'طلبات الموقع' : 'Commandes Site', icon: ShoppingBag, show: isAdmin },
+        { id: 'websiteManagement', label: language === 'ar' ? 'إدارة الموقع' : 'Gestion Site Web', icon: Globe },
+        { id: 'websiteOrders', label: language === 'ar' ? 'طلبات الموقع' : 'Commandes Site', icon: ShoppingBag },
       ],
     },
     {
       label: 'CONFIG',
       items: [
-        { id: 'catalogue', label: language === 'ar' ? 'الكتالوج' : 'Catalogue', icon: Gem, show: isAdmin },
-        { id: 'settings', label: t.settings, icon: Settings, show: true },
+        { id: 'catalogue', label: language === 'ar' ? 'الكتالوج' : 'Catalogue', icon: Gem },
+        { id: 'settings', label: t.settings, icon: Settings },
       ],
     },
-  ];
+  ].map(section => ({
+    ...section,
+    items: section.items.map(item => ({
+      ...item,
+      show: (item as any).show !== false && can(`${item.id}.view`),
+    })),
+  }));
 
   return (
     <motion.aside

@@ -7,7 +7,7 @@ import { translations } from '../../i18n/translations';
 import { SaleInvoice } from '../../types';
 
 const SellingInvoices: React.FC = () => {
-  const { sales, deleteSale, updateSale, language, user, workers, settings, purchases, metalPriceFor, metalCategories, metalTypes, updateMetalType } = useApp();
+  const { sales, deleteSale, updateSale, language, user, workers, settings, purchases, metalPriceFor, metalCategories, metalTypes, updateMetalType, can } = useApp();
   const t = translations[language];
   const [searchTerm, setSearchTerm] = useState('');
   const [showDebtOnly, setShowDebtOnly] = useState(false);
@@ -419,6 +419,7 @@ const SellingInvoices: React.FC = () => {
                       className="btn-icon danger"
                       title="Supprimer définitivement"
                       onClick={() => { if (confirm(t.delete + ' ?')) { deleteSale(s.id); } }}
+                      style={can('sellingInvoices.delete') ? undefined : { display: 'none' }}
                     >
                       <Trash2 size={15} />
                     </button>

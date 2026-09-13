@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { WebOffer, WebSpecialOffer, WebDeliveryCompany, WebWilayaPrice } from '../../types';
 import { ALGERIA_WILAYAS } from '../../data/algeriaWilayas';
+import { uploadImage, BUCKETS, type BucketName } from '../../lib/supabase';
 
 type SubTab = 'offers' | 'specialOffers' | 'delivery' | 'contacts' | 'siteSettings';
 
@@ -24,12 +25,10 @@ const SUBTABS: { id: SubTab; label: string; icon: React.ElementType }[] = [
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-function toBase64(file: File): Promise<string> {
-  return new Promise(res => {
-    const r = new FileReader();
-    r.onload = e => res(e.target?.result as string);
-    r.readAsDataURL(file);
-  });
+// Pictures are stored in a Supabase bucket and referenced by URL. Inlining
+// them as base64 used to make every offer row — and every backup — enormous.
+async function uploadTo(bucket: BucketName, file: File): Promise<string> {
+  return uploadImage(bucket, file);
 }
 
 const Toggle: React.FC<{ on: boolean; onToggle: () => void; label: string }> = ({ on, onToggle, label }) => (
@@ -94,13 +93,26 @@ const StatCard: React.FC<{ icon: React.ElementType; label: string; value: string
 
 // ─── image upload area ─────────────────────────────────────────────────────
 
-const ImageUpload: React.FC<{ image: string | null; onChange: (b64: string | null) => void }> = ({ image, onChange }) => {
+const ImageUpload: React.FC<{
+  image: string | null;
+  onChange: (url: string | null) => void;
+  bucket?: BucketName;
+}> = ({ image, onChange, bucket = BUCKETS.products }) => {
   const ref = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   const handleFile = async (file: File) => {
-    const b64 = await toBase64(file);
-    onChange(b64);
+    setError('');
+    setBusy(true);
+    try {
+      onChange(await uploadTo(bucket, file));
+    } catch (e: any) {
+      setError(e?.message || "Échec de l'envoi de l'image");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -142,7 +154,15 @@ const ImageUpload: React.FC<{ image: string | null; onChange: (b64: string | nul
       </div>
       <input ref={ref} type="file" accept="image/*" style={{ display: 'none' }}
         onChange={async e => { if (e.target.files?.[0]) { handleFile(e.target.files[0]); } }} />
-      {image && (
+      {busy && (
+        <p style={{ fontSize: 11.5, color: 'var(--gold)', margin: '6px 0 0', fontWeight: 700 }}>
+          Envoi de l'image…
+        </p>
+      )}
+      {error && (
+        <p style={{ fontSize: 11.5, color: 'var(--danger)', margin: '6px 0 0', fontWeight: 600 }}>{error}</p>
+      )}
+      {image && !busy && (
         <button
           onClick={e => { e.stopPropagation(); onChange(null); }}
           className="btn-outline"
@@ -607,7 +627,7 @@ const SpecialOfferModal: React.FC<SpecialOfferModalProps> = ({ open, onClose, ed
               {/* Top row: image + base info */}
               <div style={{ display: 'grid', gridTemplateColumns: '190px 1fr', gap: 22, alignItems: 'start' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <ImageUpload image={f.image} onChange={img => setF(prev => ({ ...prev, image: img }))} />
+                  <ImageUpload image={f.image} bucket={BUCKETS.offers} onChange={img => setF(prev => ({ ...prev, image: img }))} />
                   <div>
                     <label className="lux-label">Nom</label>
                     <input
@@ -1854,9 +1874,12 @@ const SiteSettingsTab: React.FC = () => {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      const b64 = await toBase64(e.target.files[0]);
-      setLogo(b64);
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setLogo(await uploadTo(BUCKETS.logos, file));
+    } catch (err: any) {
+      alert(err?.message || "Échec de l'envoi du logo");
     }
   };
 

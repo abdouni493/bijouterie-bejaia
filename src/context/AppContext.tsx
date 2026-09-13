@@ -1,15 +1,18 @@
 /**
  * ─── APPLICATION STORE ───────────────────────────────────────────────────────
- * A single in-memory store for the whole application. There is no database and
- * no network: the state is seeded from `src/data/demoData.ts` and every action
- * below mutates that copy, so the demo behaves like the real product while
- * staying completely self-contained. Reloading the page restores the dataset.
+ * A single store for the whole application, backed by Supabase.
+ *
+ * Every ledger below is held in React state exactly as before — which is why
+ * the actions still compute stock deltas, debt allocations and melt losses in
+ * memory — but each collection is mirrored to its table by `useSynced`, so a
+ * change made here is a row written there. See `src/lib/repository.ts` for the
+ * column mapping and `supabase/` for the schema itself.
  *
  * Terminology note: what used to be "silver types" is now *metal types*. Each
  * one belongs to a *metal category* (Or, Argent, or any category the user
  * creates), which is what makes the app metal-agnostic.
  */
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   User, Language, MetalCategory, MetalType, Supplier, PurchaseInvoice, SaleInvoice,
   Workshop, Command, Worker, WorkerAdvance, WorkerAbsence, WorkerPaymentRecord,
@@ -18,6 +21,17 @@ import {
   WebContacts, WebOrder, Client, ClientPayment, ClientRecuperation, StoreSettings,
 } from '../types';
 import { DEMO_DATASET } from '../data/demoData';
+import { supabase } from '../lib/supabase';
+import {
+  useSynced, useSyncedList, useSyncedSettings, useSyncedContacts,
+  setSyncErrorHandler, flushSync,
+} from '../lib/useSynced';
+import * as repo from '../lib/repository';
+import {
+  adminExists as rpcAdminExists, bootstrapAdmin, signIn as authSignIn,
+  signOut as authSignOut, fetchProfile, fetchMyPermissions, profileToUser,
+  authErrorMessage,
+} from '../lib/auth';
 
 interface AppState {
   user: User | null;
@@ -185,6 +199,27 @@ interface AppState {
   setTheme: (t: 'dark' | 'light') => void;
 
   isLoading: boolean;
+
+  // ── Authentication & permissions ───────────────────────────
+  /** Permission keys the signed-in user holds (an admin holds every one). */
+  permissions: string[];
+  /** Is this button / screen allowed? The sidebar and every action button ask this. */
+  can: (permissionKey: string) => boolean;
+  /** True until the first permission load finishes, so nothing flashes. */
+  isAuthReady: boolean;
+  /** False only on a brand-new project — drives the "create admin" button. */
+  hasAdmin: boolean;
+  signIn: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  createAdminAccount: (email: string, password: string, username: string) => Promise<void>;
+  refreshAdminExists: () => Promise<void>;
+  reloadPermissions: () => Promise<void>;
+  /** Re-reads the workers table — the Employés screen calls this after an RPC
+   *  creates or deletes an account server side. */
+  reloadWorkers: () => Promise<void>;
+  /** Last connection / write error, surfaced as a banner. */
+  syncError: string | null;
+  clearSyncError: () => void;
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
@@ -199,11 +234,13 @@ const newId = (prefix = ''): string => {
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // ── Session / preferences (the only things that survive a reload) ─────────
-  const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('user');
-    return saved && saved !== 'null' ? JSON.parse(saved) : null;
-  });
+  // ── Session ──────────────────────────────────────────────────────────────
+  // The user is whoever Supabase says is signed in; there is no local account.
+  const [user, setUserState] = useState<User | null>(null);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [hasAdmin, setHasAdmin] = useState(true);       // assume yes until told otherwise
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const [language, setLanguage] = useState<Language>(
     () => (localStorage.getItem('language') as Language) || 'fr'
@@ -223,43 +260,270 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
-  useEffect(() => { localStorage.setItem('user', JSON.stringify(user)); }, [user]);
   useEffect(() => { localStorage.setItem('language', language); }, [language]);
 
-  // ── Ledgers, seeded from the demo dataset ────────────────────────────────
-  const [metalCategories, setMetalCategories] = useState<MetalCategory[]>(() => clone(DEMO_DATASET.metalCategories));
-  const [metalTypes, setMetalTypes] = useState<MetalType[]>(() => clone(DEMO_DATASET.metalTypes));
-  const [shapes, setShapes] = useState<string[]>(() => clone(DEMO_DATASET.shapes));
-  const [calibres, setCalibresList] = useState<string[]>(() =>
-    Array.from(new Set(DEMO_DATASET.metalCategories.flatMap(c => c.calibres)))
-  );
-  const [suppliers, setSuppliers] = useState<Supplier[]>(() => clone(DEMO_DATASET.suppliers));
-  const [purchases, setPurchases] = useState<PurchaseInvoice[]>(() => clone(DEMO_DATASET.purchases));
-  const [sales, setSales] = useState<SaleInvoice[]>(() => clone(DEMO_DATASET.sales));
-  const [workshops, setWorkshops] = useState<Workshop[]>(() => clone(DEMO_DATASET.workshops));
-  const [commands, setCommands] = useState<Command[]>(() => clone(DEMO_DATASET.commands));
-  const [workers, setWorkers] = useState<Worker[]>(() => clone(DEMO_DATASET.workers));
-  const [workerAdvances, setWorkerAdvances] = useState<WorkerAdvance[]>(() => clone(DEMO_DATASET.workerAdvances));
-  const [workerAbsences, setWorkerAbsences] = useState<WorkerAbsence[]>(() => clone(DEMO_DATASET.workerAbsences));
-  const [workerPayments, setWorkerPayments] = useState<WorkerPaymentRecord[]>(() => clone(DEMO_DATASET.workerPayments));
-  const [deliveries, setDeliveries] = useState<Delivery[]>(() => clone(DEMO_DATASET.deliveries));
-  const [storeExpenses, setStoreExpenses] = useState<StoreExpense[]>(() => clone(DEMO_DATASET.storeExpenses));
-  const [cassiePurchases, setCassiePurchases] = useState<CassiePurchase[]>(() => clone(DEMO_DATASET.cassiePurchases));
-  const [meltings, setMeltings] = useState<MeltingRecord[]>(() => clone(DEMO_DATASET.meltings));
-  const [debts, setDebts] = useState<Debt[]>(() => clone(DEMO_DATASET.debts));
-  const [debtPayments, setDebtPayments] = useState<DebtPayment[]>(() => clone(DEMO_DATASET.debtPayments));
-  const [replacements, setReplacements] = useState<ReplacementInvoice[]>(() => clone(DEMO_DATASET.replacements));
-  const [clients, setClients] = useState<Client[]>(() => clone(DEMO_DATASET.clients));
-  const [settings, setSettings] = useState<StoreSettings>(() => clone(DEMO_DATASET.settings));
-  const [minimalWeight, setMinimalWeightState] = useState<number>(DEMO_DATASET.minimalWeight);
-  const [webOffers, setWebOffers] = useState<WebOffer[]>(() => clone(DEMO_DATASET.webOffers));
-  const [webSpecialOffers, setWebSpecialOffers] = useState<WebSpecialOffer[]>(() => clone(DEMO_DATASET.webSpecialOffers));
-  const [webDeliveryCompanies, setWebDeliveryCompanies] = useState<WebDeliveryCompany[]>(() => clone(DEMO_DATASET.webDeliveryCompanies));
-  const [webContacts, setWebContacts] = useState<WebContacts>(() => clone(DEMO_DATASET.webContacts));
-  const [webOrders, setWebOrders] = useState<WebOrder[]>(() => clone(DEMO_DATASET.webOrders));
+  // ── Ledgers, mirrored to Supabase ────────────────────────────────────────
+  // `live` gates the mirror: nothing is written back until the first load has
+  // finished, so hydrating the store never echoes straight back to the server.
+  const [live, setLive] = useState(false);
+
+  const [metalCategories, setMetalCategories, hydrateMetalCategories] = useSynced<MetalCategory>(repo.metalCategoryMapper, live);
+  const [metalTypes, setMetalTypes, hydrateMetalTypes]               = useSynced<MetalType>(repo.metalTypeMapper, live);
+  const [shapes, setShapes, hydrateShapes]                           = useSyncedList('shapes', 'name', live);
+  const [calibres, setCalibresList, hydrateCalibres]                 = useSyncedList('calibres', 'value', live);
+  const [suppliers, setSuppliers, hydrateSuppliers]                  = useSynced<Supplier>(repo.supplierMapper, live);
+  const [purchases, setPurchases, hydratePurchases]                  = useSynced<PurchaseInvoice>(repo.purchaseMapper, live);
+  const [sales, setSales, hydrateSales]                              = useSynced<SaleInvoice>(repo.saleMapper, live);
+  const [workshops, setWorkshops, hydrateWorkshops]                  = useSynced<Workshop>(repo.workshopMapper, live);
+  // Declared before commands and replacements on purpose: both carry a
+  // delivery_id, and the mirror flushes collections in hook order, so a parent
+  // row is always written before anything that points at it.
+  const [deliveries, setDeliveries, hydrateDeliveries]               = useSynced<Delivery>(repo.deliveryMapper, live);
+  const [commands, setCommands, hydrateCommands]                     = useSynced<Command>(repo.commandMapper, live);
+  const [workers, setWorkers, hydrateWorkers]                        = useSynced<Worker>(repo.workerMapper, live);
+  const [workerAdvances, setWorkerAdvances, hydrateAdvances]         = useSynced<WorkerAdvance>(repo.workerAdvanceMapper, live);
+  const [workerAbsences, setWorkerAbsences, hydrateAbsences]         = useSynced<WorkerAbsence>(repo.workerAbsenceMapper, live);
+  const [workerPayments, setWorkerPayments, hydrateWorkerPayments]   = useSynced<WorkerPaymentRecord>(repo.workerPaymentMapper, live);
+  const [storeExpenses, setStoreExpenses, hydrateExpenses]           = useSynced<StoreExpense>(repo.storeExpenseMapper, live);
+  const [cassiePurchases, setCassiePurchases, hydrateCassie]         = useSynced<CassiePurchase>(repo.cassiePurchaseMapper, live);
+  const [meltings, setMeltings, hydrateMeltings]                     = useSynced<MeltingRecord>(repo.meltingMapper, live);
+  const [debts, setDebts, hydrateDebts]                              = useSynced<Debt>(repo.debtMapper, live);
+  const [debtPayments, setDebtPayments, hydrateDebtPayments]         = useSynced<DebtPayment>(repo.debtPaymentMapper, live);
+  const [replacements, setReplacements, hydrateReplacements]         = useSynced<ReplacementInvoice>(repo.replacementMapper, live);
+  const [clients, setClients, hydrateClients]                        = useSynced<Client>(repo.clientMapper, live);
+  const [webOffers, setWebOffers, hydrateWebOffers]                  = useSynced<WebOffer>(repo.webOfferMapper, live);
+  const [webSpecialOffers, setWebSpecialOffers, hydrateSpecialOffers]= useSynced<WebSpecialOffer>(repo.webSpecialOfferMapper, live);
+  const [webDeliveryCompanies, setWebDeliveryCompanies, hydrateDelCos] = useSynced<WebDeliveryCompany>(repo.webDeliveryCompanyMapper, live);
+  const [webOrders, setWebOrders, hydrateWebOrders]                  = useSynced<WebOrder>(repo.webOrderMapper, live);
+
+  const {
+    settings, setSettings,
+    minimalWeight, setMinimalWeight: setMinimalWeightState,
+    hydrate: hydrateSettings,
+  } = useSyncedSettings(DEMO_DATASET.settings, DEMO_DATASET.minimalWeight, live);
+
+  const [webContacts, setWebContacts, hydrateWebContacts] = useSyncedContacts({}, live);
+
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => { setIsLoading(false); }, []);
+  // ══ AUTHENTICATION ═══════════════════════════════════════════════════════
+
+  const can = useCallback(
+    (key: string) => user?.role === 'admin' || permissions.includes(key),
+    [user, permissions]
+  );
+
+  const refreshAdminExists = useCallback(async () => {
+    try { setHasAdmin(await rpcAdminExists()); }
+    catch (e) { setSyncError(authErrorMessage(e, language)); }
+  }, [language]);
+
+  const reloadPermissions = useCallback(async () => {
+    try { setPermissions(await fetchMyPermissions()); }
+    catch (e) { console.error('[permissions]', e); }
+  }, []);
+
+  const reloadWorkers = useCallback(async () => {
+    try { hydrateWorkers(await repo.fetchAll(repo.workerMapper)); }
+    catch (e) { console.error('[workers]', e); }
+  }, [hydrateWorkers]);
+
+  /** Reads the profile behind a session and publishes it as the current user. */
+  const adoptSession = useCallback(async (userId: string | undefined) => {
+    if (!userId) {
+      setUserState(null);
+      setPermissions([]);
+      setLive(false);
+      return;
+    }
+    try {
+      const profile = await fetchProfile(userId);
+      if (!profile || !profile.isActive) {
+        await authSignOut();
+        setUserState(null);
+        setPermissions([]);
+        return;
+      }
+      setUserState(profileToUser(profile, language));
+      setPermissions(await fetchMyPermissions());
+    } catch (e) {
+      setSyncError(authErrorMessage(e, language));
+      setUserState(null);
+    }
+  }, [language]);
+
+  // Boot: adopt any stored session, and find out whether this shop has an admin.
+  useEffect(() => {
+    let cancelled = false;
+    setSyncErrorHandler(e => setSyncError(authErrorMessage(e, language)));
+
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
+      await adoptSession(data.session?.user?.id);
+      if (cancelled) return;
+      if (!data.session) await refreshAdminExists();
+      if (!cancelled) setIsAuthReady(true);
+    })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setUserState(null);
+        setPermissions([]);
+        setLive(false);
+        refreshAdminExists();
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        adoptSession(session?.user?.id);
+      }
+    });
+
+    return () => { cancelled = true; sub.subscription.unsubscribe(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    await authSignIn(email, password);
+    const { data } = await supabase.auth.getSession();
+    await adoptSession(data.session?.user?.id);
+  }, [adoptSession]);
+
+  const signOut = useCallback(async () => {
+    await flushSync();               // never drop a pending write on the way out
+    setLive(false);
+    await authSignOut();
+    setUserState(null);
+    setPermissions([]);
+    localStorage.removeItem('activeTab');
+    await refreshAdminExists();
+  }, [refreshAdminExists]);
+
+  const createAdminAccount = useCallback(async (email: string, password: string, username: string) => {
+    await bootstrapAdmin(email, password, username);
+    setHasAdmin(true);
+    const { data } = await supabase.auth.getSession();
+    await adoptSession(data.session?.user?.id);
+  }, [adoptSession]);
+
+  /** `setUser(null)` is how the sidebar logs out — keep that contract. */
+  const setUser = useCallback((next: User | null) => {
+    if (next === null) { void signOut(); return; }
+    setUserState(next);
+  }, [signOut]);
+
+  // ══ DATA LOADING ═════════════════════════════════════════════════════════
+  // Staff load every ledger they are allowed to read; the public storefront
+  // loads only the handful of tables anonymous visitors may see.
+
+  const loadedFor = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    const key = user ? `user:${user.id}` : 'public';
+    if (loadedFor.current === key) return;
+    loadedFor.current = key;
+
+    let cancelled = false;
+
+    /** Reads one table, tolerating "not allowed" so a missing screen is simply empty. */
+    const load = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => {
+      try { return await fn(); }
+      catch (e: any) {
+        const msg = String(e?.message || '');
+        if (/permission denied|row-level security|does not exist/i.test(msg)) return fallback;
+        throw e;
+      }
+    };
+
+    (async () => {
+      setIsLoading(true);
+      setLive(false);
+      try {
+        if (user) {
+          const [
+            cats, types, shp, cal, sup, pur, sal, wsh, cmd, wrk,
+            adv, abs, wpay, del, exp, cas, mlt, dbt, dpay, rep, cli,
+            offers, specials, delCos, orders, stg, contacts,
+          ] = await Promise.all([
+            load(() => repo.fetchAll(repo.metalCategoryMapper), []),
+            load(() => repo.fetchAll(repo.metalTypeMapper), []),
+            load(() => repo.fetchValueList('shapes', 'name', 'sort_order'), []),
+            load(() => repo.fetchValueList('calibres', 'value'), []),
+            load(() => repo.fetchAll(repo.supplierMapper), []),
+            load(() => repo.fetchAll(repo.purchaseMapper), []),
+            load(() => repo.fetchAll(repo.saleMapper), []),
+            load(() => repo.fetchAll(repo.workshopMapper), []),
+            load(() => repo.fetchAll(repo.commandMapper), []),
+            load(() => repo.fetchAll(repo.workerMapper), []),
+            load(() => repo.fetchAll(repo.workerAdvanceMapper), []),
+            load(() => repo.fetchAll(repo.workerAbsenceMapper), []),
+            load(() => repo.fetchAll(repo.workerPaymentMapper), []),
+            load(() => repo.fetchAll(repo.deliveryMapper), []),
+            load(() => repo.fetchAll(repo.storeExpenseMapper), []),
+            load(() => repo.fetchAll(repo.cassiePurchaseMapper), []),
+            load(() => repo.fetchAll(repo.meltingMapper), []),
+            load(() => repo.fetchAll(repo.debtMapper), []),
+            load(() => repo.fetchAll(repo.debtPaymentMapper), []),
+            load(() => repo.fetchAll(repo.replacementMapper), []),
+            load(() => repo.fetchAll(repo.clientMapper), []),
+            load(() => repo.fetchAll(repo.webOfferMapper), []),
+            load(() => repo.fetchAll(repo.webSpecialOfferMapper), []),
+            load(() => repo.fetchAll(repo.webDeliveryCompanyMapper), []),
+            load(() => repo.fetchAll(repo.webOrderMapper), []),
+            load(() => repo.fetchSettings(), null),
+            load(() => repo.fetchWebContacts(), null),
+          ]);
+          if (cancelled) return;
+
+          hydrateMetalCategories(cats);   hydrateMetalTypes(types);
+          hydrateShapes(shp);             hydrateCalibres(cal);
+          hydrateSuppliers(sup);          hydratePurchases(pur);
+          hydrateSales(sal);              hydrateWorkshops(wsh);
+          hydrateCommands(cmd);           hydrateWorkers(wrk);
+          hydrateAdvances(adv);           hydrateAbsences(abs);
+          hydrateWorkerPayments(wpay);    hydrateDeliveries(del);
+          hydrateExpenses(exp);           hydrateCassie(cas);
+          hydrateMeltings(mlt);           hydrateDebts(dbt);
+          hydrateDebtPayments(dpay);      hydrateReplacements(rep);
+          hydrateClients(cli);            hydrateWebOffers(offers);
+          hydrateSpecialOffers(specials); hydrateDelCos(delCos);
+          hydrateWebOrders(orders);
+          if (stg) hydrateSettings(stg.settings, stg.minimalWeight);
+          if (contacts) hydrateWebContacts(contacts);
+        } else {
+          // Anonymous storefront: published offers, tariffs and shop identity.
+          const [offers, specials, delCos, stg, contacts, cats, types] = await Promise.all([
+            load(() => repo.fetchAll(repo.webOfferMapper), []),
+            load(() => repo.fetchAll(repo.webSpecialOfferMapper), []),
+            load(() => repo.fetchAll(repo.webDeliveryCompanyMapper), []),
+            load(() => repo.fetchSettings(), null),
+            load(() => repo.fetchWebContacts(), null),
+            load(() => repo.fetchPublicCategories(), []),
+            load(() => repo.fetchPublicMetalTypes(), []),
+          ]);
+          if (cancelled) return;
+
+          hydrateWebOffers(offers);
+          hydrateSpecialOffers(specials);
+          hydrateDelCos(delCos);
+          hydrateMetalCategories(cats);
+          hydrateMetalTypes(types);
+          if (stg) hydrateSettings(stg.settings, stg.minimalWeight);
+          if (contacts) hydrateWebContacts(contacts);
+        }
+      } catch (e) {
+        if (!cancelled) setSyncError(authErrorMessage(e, language));
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+          if (user) setLive(true);     // visitors never write back
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthReady, user?.id]);
 
   // ── Category helpers ─────────────────────────────────────────────────────
   const metals = useMemo(() => metalCategories.map(c => c.name), [metalCategories]);
@@ -978,6 +1242,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'pending' as const,
       storageDeducted: false,
     } as WebOrder;
+
+    // Orders are placed by anonymous visitors, for whom the state mirror is
+    // switched off — so this one write goes to the database directly.
+    await repo.saveOne(repo.webOrderMapper, order);
     setWebOrders(prev => [...prev, order]);
     return id;
   };
@@ -1121,6 +1389,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       webContacts, updateWebContacts,
       webOrders, addWebOrder, updateWebOrder, deleteWebOrder, finalizeWebOrder, cancelWebOrder,
       exportSnapshot, importSnapshot, resetDemoData,
+      permissions, can, isAuthReady, hasAdmin,
+      signIn, signOut, createAdminAccount, refreshAdminExists, reloadPermissions, reloadWorkers,
+      syncError, clearSyncError: () => setSyncError(null),
     }}>
       {children}
     </AppContext.Provider>

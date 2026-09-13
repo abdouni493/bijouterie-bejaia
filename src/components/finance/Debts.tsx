@@ -7,7 +7,7 @@ import { translations } from '../../i18n/translations';
 import { Debt } from '../../types';
 
 const Debts: React.FC = () => {
-  const { debts, addDebt, updateDebt, deleteDebt, payDebt, language } = useApp();
+  const { debts, addDebt, updateDebt, deleteDebt, payDebt, language, can } = useApp();
   const t = translations[language];
   const shouldReduce = useReducedMotion();
 
@@ -166,7 +166,7 @@ const Debts: React.FC = () => {
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
                     <button onClick={() => openPay(d)} className="btn-icon" title="Payer" style={{ color: '#34d399' }}><DollarSign size={15} /></button>
                     <button onClick={() => openEdit(d)} className="btn-icon" title="Modifier"><Edit2 size={15} /></button>
-                    <button onClick={() => { if (confirm(t.delete + ' ?')) deleteDebt(d.id); }} className="btn-icon danger" title="Supprimer"><Trash2 size={15} /></button>
+                    <button onClick={() => { if (confirm(t.delete + ' ?')) deleteDebt(d.id); }} style={can('debts.delete') ? undefined : { display: 'none' }} className="btn-icon danger" title="Supprimer"><Trash2 size={15} /></button>
                   </div>
                 </td>
               </tr>

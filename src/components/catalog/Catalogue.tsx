@@ -19,7 +19,7 @@ const Catalogue: React.FC = () => {
   const {
     metalCategories, addMetalCategory, updateMetalCategory, deleteMetalCategory,
     metalTypes, shapes, addShape, updateShape, deleteShape,
-    calibres, addCalibre, deleteCalibre, language,
+    calibres, addCalibre, deleteCalibre, language, can,
   } = useApp();
   const t = translations[language];
   const shouldReduce = useReducedMotion();
@@ -154,7 +154,7 @@ const Catalogue: React.FC = () => {
               or, argent, or blanc, platine, plaqué… — avec leur prix de référence au gramme,
               qui sert au calcul des marges.
             </p>
-            <button onClick={openAddMetal} className="btn-gold" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 14, fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+            <button onClick={openAddMetal} className="btn-gold" style={{ display: can('catalogue.category.manage') ? 'flex' : 'none', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 14, fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
               <Plus size={17} /> Nouveau Métal
             </button>
           </div>
@@ -185,7 +185,7 @@ const Catalogue: React.FC = () => {
                       <button onClick={() => openEditMetal(c)} className="btn-icon" title="Modifier"><Edit2 size={14} /></button>
                       {c.isBuiltIn
                         ? <span className="btn-icon" title="Métal de base — non supprimable" style={{ opacity: 0.4, cursor: 'not-allowed' }}><Lock size={14} /></span>
-                        : <button onClick={() => removeMetal(c)} className="btn-icon danger" title="Supprimer"><Trash2 size={14} /></button>}
+                        : <button onClick={() => removeMetal(c)} style={can('catalogue.category.manage') ? undefined : { display: 'none' }} className="btn-icon danger" title="Supprimer"><Trash2 size={14} /></button>}
                     </div>
                   </div>
 
@@ -255,7 +255,7 @@ const Catalogue: React.FC = () => {
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button onClick={() => { setEditingShape(s); setShapeValue(s); setShapeModal(true); }} className="btn-icon" title="Modifier"><Edit2 size={14} /></button>
-                  <button onClick={() => { if (confirm(t.delete + ' ?')) deleteShape(s); }} className="btn-icon danger" title="Supprimer"><Trash2 size={14} /></button>
+                  <button onClick={() => { if (confirm(t.delete + ' ?')) deleteShape(s); }} style={can('catalogue.shape.manage') ? undefined : { display: 'none' }} className="btn-icon danger" title="Supprimer"><Trash2 size={14} /></button>
                 </div>
               </motion.div>
             ))}
@@ -288,7 +288,7 @@ const Catalogue: React.FC = () => {
             {calibres.map(c => (
               <div key={c} className="lux-card" style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--silver-100)' }}>{c}</span>
-                <button onClick={() => { if (confirm(`Supprimer le calibre ${c} ?`)) deleteCalibre(c); }} className="btn-icon danger" title="Supprimer">
+                <button onClick={() => { if (confirm(`Supprimer le calibre ${c} ?`)) deleteCalibre(c); }} style={can('catalogue.calibre.manage') ? undefined : { display: 'none' }} className="btn-icon danger" title="Supprimer">
                   <Trash2 size={13} />
                 </button>
               </div>

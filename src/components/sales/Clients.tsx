@@ -12,7 +12,7 @@ const Clients: React.FC = () => {
     addClientPayment, updateClientPayment, deleteClientPayment,
     addClientRecuperation, updateClientRecuperation, deleteClientRecuperation,
     debtPayments, updateDebtPayment, deleteDebtPayment,
-    language, theme, settings,
+    language, theme, settings, can,
   } = useApp();
   const t = translations[language];
   const shouldReduce = useReducedMotion();
@@ -245,6 +245,7 @@ const Clients: React.FC = () => {
                   </motion.button>
                   <motion.button
                     onClick={() => { if (confirm(t.delete + ' ?')) deleteClient(c.id); }}
+                    style={can('clients.delete') ? undefined : { display: 'none' }}
                     whileHover={shouldReduce ? {} : { scale: 1.1 }}
                     whileTap={shouldReduce ? {} : { scale: 0.9 }}
                     className="btn-icon danger"
@@ -613,7 +614,7 @@ const Clients: React.FC = () => {
                                   onClick={() => { if (confirm('Supprimer ?')) { tx.type === 'payment' ? deleteClientPayment(c.id, tx.id) : deleteClientRecuperation(c.id, tx.id); } }}
                                   whileHover={shouldReduce ? {} : { color: '#FF5F72' }}
                                   title={language === 'ar' ? 'حذف' : 'Supprimer'}
-                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: isDark ? 'rgba(192,200,212,0.25)' : 'rgba(80,70,50,0.25)', padding: 4 }}
+                                  style={{ display: can('clients.payment.delete') ? undefined : 'none', background: 'none', border: 'none', cursor: 'pointer', color: isDark ? 'rgba(192,200,212,0.25)' : 'rgba(80,70,50,0.25)', padding: 4 }}
                                 >
                                   <Trash2 size={14} />
                                 </motion.button>

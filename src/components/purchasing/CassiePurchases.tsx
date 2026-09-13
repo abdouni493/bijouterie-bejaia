@@ -6,7 +6,7 @@ import { translations } from '../../i18n/translations';
 import { CassiePurchase, MeltingRecord } from '../../types';
 
 const CassiePurchases: React.FC = () => {
-  const { cassiePurchases, addCassiePurchase, updateCassiePurchase, deleteCassiePurchase, meltCassiePurchases, metalTypes, language, meltings, deleteMeltingRecord, updateMeltingRecord, categoryLabel } = useApp();
+  const { cassiePurchases, addCassiePurchase, updateCassiePurchase, deleteCassiePurchase, meltCassiePurchases, metalTypes, language, meltings, deleteMeltingRecord, updateMeltingRecord, categoryLabel, can } = useApp();
   const t = translations[language];
   const shouldReduce = useReducedMotion();
 
@@ -319,6 +319,7 @@ const CassiePurchases: React.FC = () => {
                     </button>
                     <button
                       onClick={() => { if (confirm('Supprimer cet achat ?')) deleteCassiePurchase(p.id); }}
+                      style={can('cassiePurchases.delete') ? undefined : { display: 'none' }}
                       className="btn-icon danger"
                     >
                       <Trash2 size={15} />
@@ -381,6 +382,7 @@ const CassiePurchases: React.FC = () => {
                     </button>
                     <button
                       onClick={() => { if (confirm('Supprimer cette fusion ?')) deleteMeltingRecord(m.id); }}
+                      style={can('cassiePurchases.melt.delete') ? undefined : { display: 'none' }}
                       className="btn-icon danger"
                     >
                       <Trash2 size={15} />

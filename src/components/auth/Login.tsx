@@ -1,56 +1,90 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useApp } from '../../context/AppContext';
-import { DEMO_ACCOUNTS, DEMO_ADMIN } from '../../data/demoData';
-import { Lock, Mail, Gem, Globe, Eye, EyeOff, AlertCircle, Sparkles, ShieldCheck } from 'lucide-react';
+import { authErrorMessage } from '../../lib/auth';
+import {
+  Lock, Mail, Gem, Globe, Eye, EyeOff, AlertCircle, ShieldCheck,
+  UserPlus, ArrowLeft, CheckCircle2, User as UserIcon,
+} from 'lucide-react';
 
-type Mode = 'login';
+type Mode = 'login' | 'create-admin';
 
 const Login: React.FC = () => {
-  const { setUser, language, workers, settings, theme } = useApp();
+  const {
+    language, settings, theme,
+    signIn, createAdminAccount, hasAdmin, refreshAdminExists, isAuthReady,
+    syncError,
+  } = useApp();
+
   const shouldReduce = useReducedMotion();
   const isDark = theme !== 'light';
+  const isAr = language === 'ar';
 
   const [mode, setMode] = useState<Mode>('login');
 
-  // Login
+  // Sign in
   const [loginId, setLoginId] = useState('');
   const [loginPwd, setLoginPwd] = useState('');
   const [showPwd, setShowPwd] = useState(false);
+
+  // First administrator
+  const [adminName, setAdminName] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPwd, setAdminPwd] = useState('');
+  const [adminPwd2, setAdminPwd2] = useState('');
+
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
 
-  /** Signs in against the local demo accounts, then the worker list. */
-  const handleLogin = (e: React.FormEvent) => {
+  // Ask the server once whether this shop already has an administrator. The
+  // creation button is offered only while the answer is "no".
+  useEffect(() => { void refreshAdminExists(); }, [refreshAdminExists]);
+
+  // If the admin appears while this screen is open, fall back to signing in.
+  useEffect(() => {
+    if (hasAdmin && mode === 'create-admin' && !loading) setMode('login');
+  }, [hasAdmin, mode, loading]);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-
-    const id = loginId.trim().toLowerCase();
-
-    const demo = DEMO_ACCOUNTS.find(a => a.login.toLowerCase() === id && a.password === loginPwd);
-    if (demo) {
-      setUser({ ...demo.user, language });
+    try {
+      await signIn(loginId, loginPwd);
+    } catch (err) {
+      setError(authErrorMessage(err, language));
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const worker = workers.find(w => w.username === loginId.trim() && w.password === loginPwd);
-    if (worker) {
-      setUser({ id: worker.id, username: worker.fullName, email: '', role: 'worker', language });
-      setLoading(false);
-      return;
-    }
-
-    setError(language === 'ar' ? 'اسم المستخدم أو كلمة السر غير صحيحة' : 'Identifiants invalides. Veuillez réessayer.');
-    setLoading(false);
   };
 
-  /** One click into the app as an administrator — no credentials needed. */
-  const handleDemoLogin = () => {
+  const handleCreateAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError('');
-    setUser({ ...DEMO_ADMIN, language });
+
+    if (adminPwd !== adminPwd2) {
+      setError(isAr ? 'كلمتا السر غير متطابقتين.' : 'Les deux mots de passe ne correspondent pas.');
+      return;
+    }
+    if (adminPwd.length < 6) {
+      setError(isAr ? 'كلمة السر يجب أن تكون 6 أحرف على الأقل.' : 'Le mot de passe doit contenir au moins 6 caractères.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // On success the account is created AND signed in, so the app moves on by
+      // itself. hasAdmin flips to true, which retires the button for good.
+      await createAdminAccount(adminEmail, adminPwd, adminName);
+      setNotice(isAr ? 'تم إنشاء حساب المدير بنجاح.' : 'Compte administrateur créé avec succès.');
+    } catch (err) {
+      setError(authErrorMessage(err, language));
+      // A duplicate means somebody got there first — re-check and hide the button.
+      void refreshAdminExists();
+    } finally {
+      setLoading(false);
+    }
   };
 
   const storeLogo = settings.logo;
@@ -79,10 +113,95 @@ const Login: React.FC = () => {
     letterSpacing: '0.1em', textTransform: 'uppercase',
     display: 'block', marginBottom: 6,
   };
+  const focusOn = (e: React.FocusEvent<HTMLInputElement>) => { e.target.style.borderColor = gold; };
+  const focusOff = (e: React.FocusEvent<HTMLInputElement>) => {
+    e.target.style.borderColor = isDark ? 'rgba(148,163,184,0.15)' : 'rgba(100,116,139,0.18)';
+  };
+
+  const Field: React.FC<{
+    label: string; icon: React.ReactNode; children: React.ReactNode;
+  }> = ({ label, icon, children }) => (
+    <div>
+      <label style={labelStyle}>{label}</label>
+      <div style={{ position: 'relative' }}>
+        <span style={{
+          position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)',
+          color: textMuted, pointerEvents: 'none', display: 'flex',
+        }}>{icon}</span>
+        {children}
+      </div>
+    </div>
+  );
+
+  const primaryButton = (label: string, busyLabel: string): React.ReactNode => (
+    <motion.button
+      type="submit"
+      disabled={loading}
+      whileHover={shouldReduce || loading ? {} : { scale: 1.015 }}
+      whileTap={shouldReduce || loading ? {} : { scale: 0.975 }}
+      style={{
+        height: 48, borderRadius: 11, border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
+        background: `linear-gradient(135deg, ${gold} 0%, #B8952E 100%)`,
+        color: '#0A0A0A', fontSize: 14, fontWeight: 800,
+        letterSpacing: '0.06em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        opacity: loading ? 0.75 : 1, transition: 'opacity 0.2s',
+      }}
+    >
+      {loading ? (
+        <>
+          <div style={{
+            width: 16, height: 16, border: '2px solid rgba(0,0,0,0.25)',
+            borderTopColor: '#0A0A0A', borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+          {busyLabel}
+        </>
+      ) : label}
+    </motion.button>
+  );
+
+  // A connection or setup failure has to be visible right here — otherwise a
+  // shop whose SQL has not been run yet sees a login form that simply does
+  // nothing, with no clue why.
+  const connectionBanner = !error && syncError ? (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: 10,
+      background: 'rgba(245,158,11,0.09)', border: '1px solid rgba(245,158,11,0.3)',
+      borderRadius: 10, padding: '11px 14px', marginBottom: 18,
+    }}>
+      <AlertCircle size={15} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 1 }} />
+      <p style={{ fontSize: 12.5, color: '#f59e0b', margin: 0, fontWeight: 500, lineHeight: 1.6 }}>
+        {syncError}
+      </p>
+    </div>
+  ) : null;
+
+  const banner = (
+    <AnimatePresence>
+      {(error || notice) && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+          style={{
+            background: error ? 'rgba(239,68,68,0.08)' : 'rgba(34,197,94,0.10)',
+            border: `1px solid ${error ? 'rgba(239,68,68,0.25)' : 'rgba(34,197,94,0.3)'}`,
+            borderRadius: 10, padding: '10px 14px',
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}
+        >
+          {error
+            ? <AlertCircle size={15} style={{ color: '#ef4444', flexShrink: 0 }} />
+            : <CheckCircle2 size={15} style={{ color: '#22c55e', flexShrink: 0 }} />}
+          <p style={{ fontSize: 13, color: error ? '#ef4444' : '#22c55e', margin: 0, fontWeight: 500 }}>
+            {error || notice}
+          </p>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 
   return (
     <div
-      dir={language === 'ar' ? 'rtl' : 'ltr'}
+      dir={isAr ? 'rtl' : 'ltr'}
       style={{ minHeight: '100vh', display: 'flex', background: isDark ? '#080C12' : '#F1F5F9' }}
     >
       {/* ── Left brand panel ── */}
@@ -93,22 +212,18 @@ const Login: React.FC = () => {
         className="hidden md:flex flex-col items-center justify-center"
         style={{ width: '44%', background: panelBg, position: 'relative', overflow: 'hidden' }}
       >
-        {/* Background orbs */}
         <div style={{ position: 'absolute', top: '-8%', left: '-8%', width: 320, height: 320, background: 'rgba(201,168,76,0.05)', borderRadius: '50%', filter: 'blur(80px)' }} />
         <div style={{ position: 'absolute', bottom: '-8%', right: '-8%', width: 280, height: 280, background: 'rgba(90,107,125,0.06)', borderRadius: '50%', filter: 'blur(70px)' }} />
 
         <div className="relative z-10 flex flex-col items-center text-center px-10" style={{ gap: 0 }}>
-          {/* Logo circle */}
           <motion.div
             animate={shouldReduce ? {} : { y: [0, -6, 0] }}
             transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
             style={{ position: 'relative', marginBottom: 28 }}
           >
             <div style={{
-              position: 'absolute', inset: -3,
-              borderRadius: '50%',
-              background: `conic-gradient(${gold}, rgba(201,168,76,0.2), ${gold})`,
-              opacity: 0.5,
+              position: 'absolute', inset: -3, borderRadius: '50%',
+              background: `conic-gradient(${gold}, rgba(201,168,76,0.2), ${gold})`, opacity: 0.5,
             }} />
             <div style={{
               width: 96, height: 96, borderRadius: '50%',
@@ -116,13 +231,11 @@ const Login: React.FC = () => {
               background: storeLogo ? 'transparent' : 'rgba(201,168,76,0.08)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               overflow: 'hidden', position: 'relative',
-              boxShadow: `0 0 0 4px rgba(201,168,76,0.12)`,
+              boxShadow: '0 0 0 4px rgba(201,168,76,0.12)',
             }}>
-              {storeLogo ? (
-                <img src={storeLogo} alt="logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-              ) : (
-                <Gem size={38} style={{ color: gold }} />
-              )}
+              {storeLogo
+                ? <img src={storeLogo} alt="logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                : <Gem size={38} style={{ color: gold }} />}
             </div>
           </motion.div>
 
@@ -209,6 +322,7 @@ const Login: React.FC = () => {
         </div>
 
         <AnimatePresence mode="wait">
+          {/* ══════════════════ SIGN IN ══════════════════ */}
           {mode === 'login' && (
             <motion.div
               key="login"
@@ -218,7 +332,6 @@ const Login: React.FC = () => {
               transition={{ duration: 0.35 }}
               style={{ width: '100%', maxWidth: 420 }}
             >
-              {/* Login card */}
               <div style={{
                 background: formBg, border: formBorder, borderRadius: 22,
                 padding: 40, backdropFilter: isDark ? 'blur(20px)' : undefined,
@@ -228,120 +341,98 @@ const Login: React.FC = () => {
                   <p style={{ fontSize: 10, fontWeight: 700, color: gold, letterSpacing: '0.18em', textTransform: 'uppercase', margin: '0 0 6px' }}>
                     ESPACE ADMINISTRATION
                   </p>
-                  <h2 style={{ fontSize: 26, fontWeight: 800, color: textPrimary, letterSpacing: '-0.03em', margin: 0 }}>Connexion</h2>
+                  <h2 style={{ fontSize: 26, fontWeight: 800, color: textPrimary, letterSpacing: '-0.03em', margin: 0 }}>
+                    {isAr ? 'تسجيل الدخول' : 'Connexion'}
+                  </h2>
                   <div style={{ marginTop: 10, width: 32, height: 3, background: `linear-gradient(90deg, ${gold}, rgba(201,168,76,0.3))`, borderRadius: 99 }} />
                 </div>
 
+                {connectionBanner}
+
                 <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div>
-                    <label style={labelStyle}>{language === 'ar' ? 'البريد / اسم المستخدم' : 'Email ou identifiant'}</label>
-                    <div style={{ position: 'relative' }}>
-                      <Mail size={15} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
-                      <input
-                        type="text"
-                        value={loginId}
-                        onChange={e => setLoginId(e.target.value)}
-                        placeholder="demo"
-                        style={inputStyle}
-                        autoComplete="username"
-                        onFocus={e => { (e.target as HTMLInputElement).style.borderColor = gold; }}
-                        onBlur={e => { (e.target as HTMLInputElement).style.borderColor = isDark ? 'rgba(148,163,184,0.15)' : 'rgba(100,116,139,0.18)'; }}
-                      />
-                    </div>
-                  </div>
+                  <Field label={isAr ? 'البريد الإلكتروني' : 'Adresse email'} icon={<Mail size={15} />}>
+                    <input
+                      type="email" value={loginId} onChange={e => setLoginId(e.target.value)}
+                      placeholder="vous@exemple.com" style={inputStyle}
+                      autoComplete="username" required
+                      onFocus={focusOn} onBlur={focusOff}
+                    />
+                  </Field>
 
-                  <div>
-                    <label style={labelStyle}>{language === 'ar' ? 'كلمة السر' : 'Mot de passe'}</label>
-                    <div style={{ position: 'relative' }}>
-                      <Lock size={15} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
-                      <input
-                        type={showPwd ? 'text' : 'password'}
-                        value={loginPwd}
-                        onChange={e => setLoginPwd(e.target.value)}
-                        placeholder="••••••••"
-                        style={{ ...inputStyle, paddingRight: 44 }}
-                        autoComplete="current-password"
-                        onFocus={e => { (e.target as HTMLInputElement).style.borderColor = gold; }}
-                        onBlur={e => { (e.target as HTMLInputElement).style.borderColor = isDark ? 'rgba(148,163,184,0.15)' : 'rgba(100,116,139,0.18)'; }}
-                      />
-                      <button type="button" onClick={() => setShowPwd(!showPwd)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: textMuted, cursor: 'pointer', padding: 4, display: 'flex' }}>
-                        {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
-                      </button>
-                    </div>
-                  </div>
+                  <Field label={isAr ? 'كلمة السر' : 'Mot de passe'} icon={<Lock size={15} />}>
+                    <input
+                      type={showPwd ? 'text' : 'password'}
+                      value={loginPwd} onChange={e => setLoginPwd(e.target.value)}
+                      placeholder="••••••••" style={{ ...inputStyle, paddingRight: 44 }}
+                      autoComplete="current-password" required
+                      onFocus={focusOn} onBlur={focusOff}
+                    />
+                    <button
+                      type="button" onClick={() => setShowPwd(!showPwd)}
+                      style={{
+                        position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                        background: 'none', border: 'none', color: textMuted,
+                        cursor: 'pointer', padding: 4, display: 'flex',
+                      }}
+                    >
+                      {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </Field>
 
-                  <AnimatePresence>
-                    {error && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                        style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}
-                      >
-                        <AlertCircle size={15} style={{ color: '#ef4444', flexShrink: 0 }} />
-                        <p style={{ fontSize: 13, color: '#ef4444', margin: 0, fontWeight: 500 }}>{error}</p>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  <motion.button
-                    type="submit"
-                    disabled={loading}
-                    whileHover={shouldReduce ? {} : { scale: 1.015 }}
-                    whileTap={shouldReduce ? {} : { scale: 0.975 }}
-                    style={{
-                      height: 48, borderRadius: 11, border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
-                      background: `linear-gradient(135deg, ${gold} 0%, #B8952E 100%)`,
-                      color: '#0A0A0A', fontSize: 14, fontWeight: 800,
-                      letterSpacing: '0.06em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                      opacity: loading ? 0.75 : 1, transition: 'opacity 0.2s',
-                    }}
-                  >
-                    {loading ? (
-                      <><div style={{ width: 16, height: 16, border: '2px solid rgba(0,0,0,0.25)', borderTopColor: '#0A0A0A', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />Connexion...</>
-                    ) : (language === 'ar' ? 'دخول' : 'Se connecter')}
-                  </motion.button>
+                  {banner}
+                  {primaryButton(
+                    isAr ? 'دخول' : 'Se connecter',
+                    isAr ? 'جارٍ الدخول...' : 'Connexion...'
+                  )}
                 </form>
 
-                {/* ── Demo access ── */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '22px 0 16px' }}>
-                  <div style={{ flex: 1, height: 1, background: isDark ? 'rgba(148,163,184,0.16)' : 'rgba(100,116,139,0.18)' }} />
-                  <span style={{ fontSize: 10, fontWeight: 800, color: textMuted, letterSpacing: '0.14em', textTransform: 'uppercase' }}>
-                    {language === 'ar' ? 'أو' : 'ou'}
-                  </span>
-                  <div style={{ flex: 1, height: 1, background: isDark ? 'rgba(148,163,184,0.16)' : 'rgba(100,116,139,0.18)' }} />
-                </div>
+                {/* ── First-run: create the administrator ──
+                    Shown only while the shop has no admin yet. The moment one
+                    exists this block disappears permanently, and the server
+                    refuses bootstrap_admin regardless. */}
+                {isAuthReady && !hasAdmin && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '22px 0 16px' }}>
+                      <div style={{ flex: 1, height: 1, background: isDark ? 'rgba(148,163,184,0.16)' : 'rgba(100,116,139,0.18)' }} />
+                      <span style={{ fontSize: 10, fontWeight: 800, color: textMuted, letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+                        {isAr ? 'أول مرة' : 'Première utilisation'}
+                      </span>
+                      <div style={{ flex: 1, height: 1, background: isDark ? 'rgba(148,163,184,0.16)' : 'rgba(100,116,139,0.18)' }} />
+                    </div>
 
-                <motion.button
-                  type="button"
-                  onClick={handleDemoLogin}
-                  whileHover={shouldReduce ? {} : { scale: 1.015 }}
-                  whileTap={shouldReduce ? {} : { scale: 0.975 }}
-                  style={{
-                    width: '100%', height: 50, borderRadius: 11, cursor: 'pointer',
-                    border: `1.5px solid ${gold}`,
-                    background: isDark ? 'rgba(201,168,76,0.10)' : 'rgba(201,168,76,0.12)',
-                    color: isDark ? '#E6D9A8' : '#8A6D18',
-                    fontSize: 14, fontWeight: 800, letterSpacing: '0.02em',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                  }}
-                >
-                  <Sparkles size={16} />
-                  {language === 'ar' ? 'الدخول بحساب تجريبي (مدير)' : 'Essayer la démo — compte Admin'}
-                </motion.button>
+                    <motion.button
+                      type="button"
+                      onClick={() => { setMode('create-admin'); setError(''); setNotice(''); }}
+                      whileHover={shouldReduce ? {} : { scale: 1.015 }}
+                      whileTap={shouldReduce ? {} : { scale: 0.975 }}
+                      style={{
+                        width: '100%', height: 50, borderRadius: 11, cursor: 'pointer',
+                        border: `1.5px solid ${gold}`,
+                        background: isDark ? 'rgba(201,168,76,0.10)' : 'rgba(201,168,76,0.12)',
+                        color: isDark ? '#E6D9A8' : '#8A6D18',
+                        fontSize: 14, fontWeight: 800, letterSpacing: '0.02em',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                      }}
+                    >
+                      <UserPlus size={16} />
+                      {isAr ? 'إنشاء حساب مدير' : 'Créer un compte administrateur'}
+                    </motion.button>
 
-                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                  <ShieldCheck size={12} style={{ color: textMuted }} />
-                  <span style={{ fontSize: 11, color: textMuted, fontWeight: 600 }}>
-                    {language === 'ar'
-                      ? 'بيانات تجريبية محلية — لا حاجة لأي اتصال'
-                      : 'Données de démonstration locales — aucun compte requis'}
-                  </span>
-                </div>
+                    <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      <ShieldCheck size={12} style={{ color: textMuted }} />
+                      <span style={{ fontSize: 11, color: textMuted, fontWeight: 600, textAlign: 'center' }}>
+                        {isAr
+                          ? 'يُنشأ مرة واحدة فقط — ثم يختفي هذا الزر نهائياً'
+                          : 'Création unique — ce bouton disparaît ensuite définitivement'}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
 
-              {/* View website */}
               <button
                 type="button"
-                onClick={() => window.location.href = '?view=shop'}
+                onClick={() => { window.location.href = '?view=shop'; }}
                 style={{
                   marginTop: 12, width: '100%', height: 44, borderRadius: 11,
                   border: isDark ? '1px solid rgba(148,163,184,0.18)' : '1px solid rgba(100,116,139,0.2)',
@@ -351,8 +442,108 @@ const Login: React.FC = () => {
                   transition: 'all 0.2s',
                 }}
               >
-                <Globe size={15} /> Voir le site web
+                <Globe size={15} /> {isAr ? 'عرض الموقع' : 'Voir le site web'}
               </button>
+            </motion.div>
+          )}
+
+          {/* ══════════════════ CREATE FIRST ADMIN ══════════════════ */}
+          {mode === 'create-admin' && (
+            <motion.div
+              key="create-admin"
+              initial={shouldReduce ? false : { opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={shouldReduce ? undefined : { opacity: 0, y: -16 }}
+              transition={{ duration: 0.35 }}
+              style={{ width: '100%', maxWidth: 420 }}
+            >
+              <div style={{
+                background: formBg, border: formBorder, borderRadius: 22,
+                padding: 40, backdropFilter: isDark ? 'blur(20px)' : undefined,
+                boxShadow: isDark ? '0 20px 60px rgba(0,0,0,0.4)' : '0 4px 24px rgba(0,0,0,0.07)',
+              }}>
+                <button
+                  type="button"
+                  onClick={() => { setMode('login'); setError(''); setNotice(''); }}
+                  style={{
+                    background: 'none', border: 'none', color: textMuted, cursor: 'pointer',
+                    padding: 0, marginBottom: 18, display: 'flex', alignItems: 'center', gap: 6,
+                    fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                  }}
+                >
+                  <ArrowLeft size={14} style={{ transform: isAr ? 'scaleX(-1)' : undefined }} />
+                  {isAr ? 'رجوع' : 'Retour'}
+                </button>
+
+                <div style={{ marginBottom: 24 }}>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: gold, letterSpacing: '0.18em', textTransform: 'uppercase', margin: '0 0 6px' }}>
+                    {isAr ? 'الإعداد الأولي' : 'CONFIGURATION INITIALE'}
+                  </p>
+                  <h2 style={{ fontSize: 24, fontWeight: 800, color: textPrimary, letterSpacing: '-0.03em', margin: 0 }}>
+                    {isAr ? 'حساب المدير' : 'Compte administrateur'}
+                  </h2>
+                  <p style={{ fontSize: 12.5, color: textMuted, margin: '10px 0 0', lineHeight: 1.6 }}>
+                    {isAr
+                      ? 'هذا الحساب يملك كل الصلاحيات، وهو الوحيد الذي يمكنه إنشاء حسابات الموظفين وتحديد صلاحياتهم.'
+                      : 'Ce compte détient toutes les permissions. Lui seul pourra créer les comptes employés et choisir ce que chacun peut voir et faire.'}
+                  </p>
+                </div>
+
+                <form onSubmit={handleCreateAdmin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <Field label={isAr ? 'الاسم الكامل' : 'Nom complet'} icon={<UserIcon size={15} />}>
+                    <input
+                      type="text" value={adminName} onChange={e => setAdminName(e.target.value)}
+                      placeholder={isAr ? 'المدير' : 'Administrateur'} style={inputStyle}
+                      autoComplete="name" required onFocus={focusOn} onBlur={focusOff}
+                    />
+                  </Field>
+
+                  <Field label={isAr ? 'البريد الإلكتروني' : 'Adresse email'} icon={<Mail size={15} />}>
+                    <input
+                      type="email" value={adminEmail} onChange={e => setAdminEmail(e.target.value)}
+                      placeholder="vous@exemple.com" style={inputStyle}
+                      autoComplete="email" required onFocus={focusOn} onBlur={focusOff}
+                    />
+                  </Field>
+
+                  <Field label={isAr ? 'كلمة السر' : 'Mot de passe'} icon={<Lock size={15} />}>
+                    <input
+                      type={showPwd ? 'text' : 'password'}
+                      value={adminPwd} onChange={e => setAdminPwd(e.target.value)}
+                      placeholder={isAr ? '6 أحرف على الأقل' : '6 caractères minimum'}
+                      style={{ ...inputStyle, paddingRight: 44 }}
+                      autoComplete="new-password" required minLength={6}
+                      onFocus={focusOn} onBlur={focusOff}
+                    />
+                    <button
+                      type="button" onClick={() => setShowPwd(!showPwd)}
+                      style={{
+                        position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                        background: 'none', border: 'none', color: textMuted,
+                        cursor: 'pointer', padding: 4, display: 'flex',
+                      }}
+                    >
+                      {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </Field>
+
+                  <Field label={isAr ? 'تأكيد كلمة السر' : 'Confirmer le mot de passe'} icon={<Lock size={15} />}>
+                    <input
+                      type={showPwd ? 'text' : 'password'}
+                      value={adminPwd2} onChange={e => setAdminPwd2(e.target.value)}
+                      placeholder="••••••••" style={inputStyle}
+                      autoComplete="new-password" required minLength={6}
+                      onFocus={focusOn} onBlur={focusOff}
+                    />
+                  </Field>
+
+                  {banner}
+                  {primaryButton(
+                    isAr ? 'إنشاء الحساب' : 'Créer le compte',
+                    isAr ? 'جارٍ الإنشاء...' : 'Création...'
+                  )}
+                </form>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

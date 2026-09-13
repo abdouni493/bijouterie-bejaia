@@ -7,7 +7,7 @@ import { translations } from '../../i18n/translations';
 import { JewelryShape, PurchaseInvoice } from '../../types';
 
 const Purchases: React.FC = () => {
-  const { suppliers, metalTypes, purchases, addPurchase, deletePurchase, updatePurchase, updateMetalType, addDebtPayment, language, shapes, categoryLabel } = useApp();
+  const { suppliers, metalTypes, purchases, addPurchase, deletePurchase, updatePurchase, updateMetalType, addDebtPayment, language, shapes, categoryLabel, can } = useApp();
   const t = translations[language];
   const shouldReduce = useReducedMotion();
 
@@ -350,7 +350,7 @@ const Purchases: React.FC = () => {
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                         <button onClick={() => setSelectedInvoice(p)} className="btn-icon" title="Voir"><Eye size={16} /></button>
                         <button onClick={() => handleOpenEdit(p)} className="btn-icon" title="Modifier"><Edit2 size={16} /></button>
-                        <button onClick={() => { if (confirm(t.delete + ' ?')) deletePurchase(p.id); }} className="btn-icon danger" title="Supprimer"><Trash2 size={16} /></button>
+                        <button onClick={() => { if (confirm(t.delete + ' ?')) deletePurchase(p.id); }} style={can('purchases.delete') ? undefined : { display: 'none' }} className="btn-icon danger" title="Supprimer"><Trash2 size={16} /></button>
                       </div>
                     </td>
                   </tr>

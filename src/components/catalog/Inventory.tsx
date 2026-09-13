@@ -9,7 +9,7 @@ import { JewelryShape } from '../../types';
 const Inventory: React.FC = () => {
   const {
     metalTypes, addMetalType, updateMetalType, deleteMetalType,
-    metalCategories, language, purchases, cassiePurchases, meltings,
+    metalCategories, language, purchases, cassiePurchases, meltings, can,
   } = useApp();
   const t = translations[language];
   const shouldReduce = useReducedMotion();

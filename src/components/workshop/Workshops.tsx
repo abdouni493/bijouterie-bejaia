@@ -7,7 +7,7 @@ import { translations } from '../../i18n/translations';
 import { Workshop } from '../../types';
 
 const Workshops: React.FC = () => {
-  const { workshops, addWorkshop, updateWorkshop, deleteWorkshop, commands, deliveries, language } = useApp();
+  const { workshops, addWorkshop, updateWorkshop, deleteWorkshop, commands, deliveries, language, can } = useApp();
   const shouldReduce = useReducedMotion();
   const t = translations[language];
   const [showAddModal, setShowAddModal] = useState(false);
@@ -86,7 +86,7 @@ const Workshops: React.FC = () => {
                 <button onClick={() => handleEdit(w)} className="btn-icon" title="Modifier">
                   <Edit2 size={15} />
                 </button>
-                <button onClick={() => { if (confirm(t.delete + ' ?')) deleteWorkshop(w.id); }} className="btn-icon danger" title="Supprimer">
+                <button onClick={() => { if (confirm(t.delete + ' ?')) deleteWorkshop(w.id); }} style={can('workshops.delete') ? undefined : { display: 'none' }} className="btn-icon danger" title="Supprimer">
                   <Trash2 size={15} />
                 </button>
               </div>

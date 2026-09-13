@@ -5,7 +5,7 @@ import { translations } from '../../i18n/translations';
 import { StoreExpense } from '../../types';
 
 const StoreExpenses: React.FC = () => {
-  const { storeExpenses, addStoreExpense, updateStoreExpense, deleteStoreExpense, language } = useApp();
+  const { storeExpenses, addStoreExpense, updateStoreExpense, deleteStoreExpense, language, can } = useApp();
   const t = translations[language];
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState<StoreExpense | null>(null);
@@ -49,7 +49,7 @@ const StoreExpenses: React.FC = () => {
            <h2 className="text-3xl font-black text-slate-800 tracking-tighter">{t.storeExpenses}</h2>
            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Gestion des dépenses du magasin</p>
         </div>
-        <button onClick={() => { setEditingExpense(null); setShowAddModal(true); }} className="btn-gold flex items-center gap-3 px-8 py-4 rounded-3xl font-black shadow-xl shadow-amber-200/40">
+        <button onClick={() => { setEditingExpense(null); setShowAddModal(true); }} style={can('storeExpenses.create') ? undefined : { display: 'none' }} className="btn-gold flex items-center gap-3 px-8 py-4 rounded-3xl font-black shadow-xl shadow-amber-200/40">
           <Plus size={22} />
           <span className="font-bold">{t.newExpense}</span>
         </button>
@@ -84,7 +84,8 @@ const StoreExpenses: React.FC = () => {
                   <Edit2 size={18} />
                 </button>
                 <button 
-                  onClick={() => deleteStoreExpense(e.id)} 
+                  onClick={() => deleteStoreExpense(e.id)}
+                  style={can('storeExpenses.delete') ? undefined : { display: 'none' }} 
                   className="p-2.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all shadow-sm"
                 >
                   <Trash2 size={18} />

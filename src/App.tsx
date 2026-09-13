@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Menu as MenuIcon } from 'lucide-react';
+import { Menu as MenuIcon, Lock, X as CloseIcon, AlertTriangle } from 'lucide-react';
 import { AppProvider, useApp } from './context/AppContext';
 import { translations } from './i18n/translations';
 import { pageVariants, pageTransition } from './animations/config';
@@ -32,14 +32,47 @@ import WebsiteManagement from './components/webshop/WebsiteManagement';
 import WebsiteOrders from './components/webshop/WebsiteOrders';
 import WebsitePublic from './components/storefront/WebsitePublic';
 
+/** Tabs in sidebar order — used to pick a landing screen for a worker. */
+const TAB_ORDER = [
+  'dashboard', 'pos', 'inventory', 'replacements', 'clients',
+  'suppliers', 'purchases', 'cassiePurchases', 'sellingInvoices',
+  'workshops', 'deliveries', 'commands', 'workers', 'myPayroll',
+  'storeExpenses', 'storeCash', 'debts', 'reports',
+  'websiteManagement', 'websiteOrders', 'catalogue', 'settings',
+];
+
 const isPublicSite = (): boolean =>
   window.location.pathname.startsWith('/shop') ||
   window.location.pathname.startsWith('/website') ||
   window.location.search.includes('view=shop');
 
 
+/** Shown when a worker lands on a tab that is not theirs. */
+const NoAccess: React.FC<{ language: string }> = ({ language }) => (
+  <div style={{
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    gap: 12, padding: '80px 24px', textAlign: 'center',
+  }}>
+    <div style={{
+      width: 56, height: 56, borderRadius: '50%',
+      background: 'rgba(201,168,76,0.10)', border: '1px solid rgba(201,168,76,0.3)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <Lock size={24} style={{ color: '#C9A84C' }} />
+    </div>
+    <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+      {language === 'ar' ? 'لا تملك صلاحية الوصول' : 'Accès non autorisé'}
+    </h2>
+    <p style={{ fontSize: 13.5, color: 'var(--text-muted)', margin: 0, maxWidth: 380, lineHeight: 1.7 }}>
+      {language === 'ar'
+        ? 'هذه الواجهة غير مفعّلة لحسابك. اطلب من المدير منحك الصلاحية.'
+        : "Cette interface n'est pas activée pour votre compte. Demandez à l'administrateur de vous accorder la permission."}
+    </p>
+  </div>
+);
+
 const MainLayout: React.FC = () => {
-  const { user, language, isLoading, theme } = useApp();
+  const { user, language, isLoading, theme, can, isAuthReady, syncError, clearSyncError } = useApp();
 
   // ── All hooks before any early return ──────────────────────
   const [activeTab, setActiveTab] = useState(() => {
@@ -56,6 +89,15 @@ const MainLayout: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('activeTab', activeTab);
   }, [activeTab]);
+
+  // The remembered tab may no longer be granted (permissions changed, or a
+  // different user signed in on this browser). Land on the first one that is.
+  useEffect(() => {
+    if (!user || !isAuthReady) return;
+    if (can(`${activeTab}.view`)) return;
+    const firstAllowed = TAB_ORDER.find(tab => can(`${tab}.view`));
+    if (firstAllowed) setActiveTab(firstAllowed);
+  }, [user, isAuthReady, activeTab, can]);
 
   useEffect(() => {
     localStorage.setItem('isSidebarCollapsed', JSON.stringify(isSidebarCollapsed));
@@ -85,7 +127,6 @@ const MainLayout: React.FC = () => {
 
   if (isPublicSite()) return <WebsitePublic />;
   if (!user) return <Login />;
-  const isAdmin = user.role === 'admin';
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
@@ -94,6 +135,10 @@ const MainLayout: React.FC = () => {
   };
 
   const renderContent = () => {
+    // The sidebar already hides forbidden tabs, but a stale `activeTab` in
+    // localStorage could still point at one — so check the permission here too.
+    if (!can(`${activeTab}.view`)) return <NoAccess language={language} />;
+
     switch (activeTab) {
       case 'clients':          return <Clients />;
       case 'dashboard':        return <Dashboard />;
@@ -207,6 +252,38 @@ const MainLayout: React.FC = () => {
           }}
         >
           <div style={{ maxWidth: 1600, margin: '0 auto' }}>
+            {/* A failed write must never be silent — the shop would think it saved. */}
+            <AnimatePresence>
+              {syncError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 12,
+                    background: 'rgba(239,68,68,0.08)',
+                    border: '1px solid rgba(239,68,68,0.28)',
+                    borderRadius: 12, padding: '12px 14px', marginBottom: 20,
+                  }}
+                >
+                  <AlertTriangle size={17} style={{ color: '#ef4444', flexShrink: 0, marginTop: 1 }} />
+                  <p style={{ flex: 1, fontSize: 13, color: '#ef4444', margin: 0, fontWeight: 500, lineHeight: 1.6 }}>
+                    {syncError}
+                  </p>
+                  <button
+                    onClick={clearSyncError}
+                    style={{
+                      background: 'none', border: 'none', color: '#ef4444',
+                      cursor: 'pointer', padding: 2, display: 'flex', flexShrink: 0,
+                    }}
+                    aria-label="Fermer"
+                  >
+                    <CloseIcon size={15} />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeTab}

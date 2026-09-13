@@ -8,7 +8,7 @@ import { translations } from '../../i18n/translations';
 import { JewelryShape, Command } from '../../types';
 
 const Commands: React.FC = () => {
-  const { commands, workshops, metalTypes, deliveries, addCommand, updateCommand, deleteCommand, language, shapes, settings, calibres, addCalibre, deleteCalibre, metals, metalCategories, addMetal, deleteMetal, addPaymentAction } = useApp();
+  const { commands, workshops, metalTypes, deliveries, addCommand, updateCommand, deleteCommand, language, shapes, settings, calibres, addCalibre, deleteCalibre, metals, metalCategories, addMetal, deleteMetal, addPaymentAction, can } = useApp();
   const t = translations[language];
   const [activeSubTab, setActiveSubTab] = useState<'reparation' | 'industry'>('reparation');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -390,7 +390,7 @@ const Commands: React.FC = () => {
                 )}
                 <button onClick={() => setEditingCommand(c)} className="btn-icon"><Edit size={15} /></button>
                 <button onClick={() => setSelectedCommand(c)} className="btn-icon"><Eye size={15} /></button>
-                <button onClick={() => deleteCommand(c.id)} className="btn-icon danger"><Trash2 size={15} /></button>
+                <button onClick={() => deleteCommand(c.id)} style={can('commands.delete') ? undefined : { display: 'none' }} className="btn-icon danger"><Trash2 size={15} /></button>
               </div>
             </div>
           );

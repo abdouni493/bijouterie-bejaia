@@ -28,7 +28,7 @@ const STATUS_BADGE: Record<WebOrderStatus, string> = {
 const ACTIVE_STATUSES: WebOrderStatus[] = ['pending', 'accepted', 'in_delivery', 'delivered'];
 
 const WebsiteOrders: React.FC = () => {
-  const { webOrders, webDeliveryCompanies, updateWebOrder, deleteWebOrder, finalizeWebOrder, cancelWebOrder } = useApp();
+  const { webOrders, webDeliveryCompanies, updateWebOrder, deleteWebOrder, finalizeWebOrder, cancelWebOrder, can } = useApp();
   const shouldReduce = useReducedMotion();
   const [view, setView] = useState<'active' | 'history'>('active');
   const [search, setSearch] = useState('');
@@ -128,7 +128,7 @@ const WebsiteOrders: React.FC = () => {
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingTop: 4 }}>
         <button onClick={() => setDetail(o)} className="btn-icon" title="Détails"><Eye size={14} /></button>
         <button onClick={() => openEdit(o)} className="btn-icon" title="Modifier"><Edit2 size={14} /></button>
-        <button onClick={() => { if (confirm('Supprimer ?')) deleteWebOrder(o.id); }} className="btn-icon danger" title="Supprimer"><Trash2 size={14} /></button>
+        <button onClick={() => { if (confirm('Supprimer ?')) deleteWebOrder(o.id); }} style={can('websiteOrders.delete') ? undefined : { display: 'none' }} className="btn-icon danger" title="Supprimer"><Trash2 size={14} /></button>
 
         {!isHistory && (
           <>
@@ -178,7 +178,7 @@ const WebsiteOrders: React.FC = () => {
         {isHistory && o.status === 'finalized' && o.storageDeducted && (
           <button
             onClick={() => { if (confirm('Récupérer le stock et annuler cette commande ?')) cancelWebOrder(o.id, true); }}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.25)', color: 'var(--gold)' }}
+            style={{ display: can('websiteOrders.cancel') ? 'flex' : 'none', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.25)', color: 'var(--gold)' }}
           >
             <RotateCcw size={12} /> Récupérer stock
           </button>

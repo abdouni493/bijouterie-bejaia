@@ -1,24 +1,32 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   Plus, Users, Wallet, Calendar, History, Trash2, Edit2,
   MinusCircle, PlusCircle, X, TrendingUp, CreditCard,
-  Calculator, User, Phone, DollarSign, Lock
+  Calculator, User, Phone, DollarSign, Lock, Mail, ShieldCheck, AlertCircle
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { translations } from '../../i18n/translations';
 import { Worker } from '../../types';
+import PermissionEditor from './PermissionEditor';
+import { DEFAULT_WORKER_PERMISSIONS } from '../../lib/permissions';
+import {
+  listStaff, createWorkerAccount, setUserPermissions,
+  setWorkerPassword, deleteWorkerAccount, authErrorMessage,
+  type StaffRow,
+} from '../../lib/auth';
 
 const Workers: React.FC = () => {
   const {
     workers, workerAdvances, workerAbsences, workerPayments,
-    addWorker, updateWorker, deleteWorker,
-    addAdvance, addAbsence, addWorkerPayment, language
+    updateWorker, deleteWorker,
+    addAdvance, addAbsence, addWorkerPayment, language, can, reloadWorkers,
   } = useApp();
 
   const t = translations[language];
   const shouldReduce = useReducedMotion();
+  const isAr = language === 'ar';
 
   // UI State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -29,6 +37,42 @@ const Workers: React.FC = () => {
   // Form State for Modals
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // ── Accounts & permissions ───────────────────────────────────────────────
+  // The payroll row lives in `workers`; the login behind it lives in auth.users.
+  // `staff` joins the two so the card can show an employee's email and rights.
+  const [staff, setStaff] = useState<StaffRow[]>([]);
+  const [permissions, setPermissions] = useState<string[]>([...DEFAULT_WORKER_PERMISSIONS]);
+  const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const reloadStaff = useCallback(async () => {
+    try { setStaff(await listStaff()); }
+    catch (e) { console.error('[staff]', e); }
+  }, []);
+
+  /** Accounts are created and deleted by RPCs, so pull both lists back after. */
+  const refreshAll = useCallback(async () => {
+    await Promise.all([reloadStaff(), reloadWorkers()]);
+  }, [reloadStaff, reloadWorkers]);
+
+  useEffect(() => { void reloadStaff(); }, [reloadStaff]);
+
+  const staffFor = (workerId: string) => staff.find(s => s.workerId === workerId);
+
+  // When the admin opens a worker for editing, start from that worker's
+  // current rights rather than from the defaults.
+  useEffect(() => {
+    if (!showAddModal && !editingWorker) return;
+    if (editingWorker) {
+      const row = staffFor(editingWorker.id);
+      setPermissions(row ? [...row.permissions] : [...DEFAULT_WORKER_PERMISSIONS]);
+    } else {
+      setPermissions([...DEFAULT_WORKER_PERMISSIONS]);
+    }
+    setFormError('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAddModal, editingWorker, staff]);
 
   const getWorkerStats = (workerId: string) => {
     const worker = workers.find(w => w.id === workerId);
@@ -46,31 +90,75 @@ const Workers: React.FC = () => {
     };
   };
 
-  const handleWorkerSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  /**
+   * Creating an employee provisions a real Supabase auth account, so they sign
+   * in with the same email/password flow as the administrator. Editing one
+   * updates the payroll row, optionally resets the password, and always
+   * rewrites the permission set from the tick-list.
+   */
+  const handleWorkerSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const data: any = {
-      fullName: fd.get('fullName') as string,
-      phone: fd.get('phone') as string,
-      address: fd.get('address') as string,
-      paymentType: fd.get('paymentType') as 'monthly' | 'daily',
-      salary: parseFloat(fd.get('salary') as string),
-      username: fd.get('username') as string,
-      password: (fd.get('password') as string) || 'worker123'
-    };
 
-    const createdAtStr = fd.get('createdAt') as string;
-    if (createdAtStr) {
-      data.createdAt = new Date(createdAtStr).toISOString();
-    }
+    const fullName = String(fd.get('fullName') || '').trim();
+    const email = String(fd.get('email') || '').trim().toLowerCase();
+    const password = String(fd.get('password') || '');
+    const phone = String(fd.get('phone') || '');
+    const address = String(fd.get('address') || '');
+    const paymentType = fd.get('paymentType') as 'monthly' | 'daily';
+    const salary = parseFloat(String(fd.get('salary') || '0')) || 0;
+    const username = String(fd.get('username') || '').trim() || email.split('@')[0];
+    const createdAtStr = String(fd.get('createdAt') || '');
 
-    // Credentials live with the worker record — sign-in checks them directly.
-    if (editingWorker) {
-      updateWorker(editingWorker.id, data);
-    } else {
-      addWorker(data);
+    setFormError('');
+    setSaving(true);
+    try {
+      if (editingWorker) {
+        const patch: any = { fullName, phone, address, paymentType, salary, username };
+        if (createdAtStr) patch.createdAt = new Date(createdAtStr).toISOString();
+        await updateWorker(editingWorker.id, patch);
+
+        const row = staffFor(editingWorker.id);
+        if (row) {
+          if (password) await setWorkerPassword(row.userId, password);
+          await setUserPermissions(row.userId, permissions);
+        }
+      } else {
+        if (password.length < 6) {
+          setFormError(isAr ? 'كلمة السر يجب أن تكون 6 أحرف على الأقل.' : 'Le mot de passe doit contenir au moins 6 caractères.');
+          return;
+        }
+        await createWorkerAccount({
+          email, password, fullName, phone, address, paymentType, salary, username, permissions,
+        });
+      }
+
+      await refreshAll();
+      closeMainModals();
+    } catch (err) {
+      setFormError(authErrorMessage(err, language));
+    } finally {
+      setSaving(false);
     }
-    closeMainModals();
+  };
+
+  /** Removes the payroll row and the login behind it in one go. */
+  const handleDeleteWorker = async (w: Worker) => {
+    if (!confirm(
+      isAr
+        ? `حذف ${w.fullName} وحسابه نهائياً؟`
+        : `Supprimer définitivement ${w.fullName} et son compte de connexion ?`
+    )) return;
+
+    try {
+      // Drop the auth user first (that also removes the payroll row server
+      // side), then clear it locally so the card disappears straight away.
+      if (staffFor(w.id)) await deleteWorkerAccount(w.id);
+      await deleteWorker(w.id);
+      await refreshAll();
+    } catch (err) {
+      alert(authErrorMessage(err, language));
+    }
   };
 
   const handleActionSubmit = (e: React.FormEvent) => {
@@ -120,13 +208,15 @@ const Workers: React.FC = () => {
           <h1 className="section-title">{t.workers}</h1>
           <p className="section-subtitle">Gestion de l'équipe & paie</p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="btn-gold"
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 24px', borderRadius: 16, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
-        >
-          <Plus size={18} /> {t.newWorker}
-        </button>
+        {can('workers.create') && (
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="btn-gold"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 24px', borderRadius: 16, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+          >
+            <Plus size={18} /> {t.newWorker}
+          </button>
+        )}
       </div>
 
       {/* Stats Row */}
@@ -173,6 +263,16 @@ const Workers: React.FC = () => {
                     <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--silver-300)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '3px 0 0' }}>
                       {t[w.paymentType]} &bull; {w.salary.toLocaleString()} DZD
                     </p>
+                    {staffFor(w.id)?.email && (
+                      <p style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--gold)', margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Mail size={10} /> {staffFor(w.id)!.email}
+                      </p>
+                    )}
+                    {staffFor(w.id) && (
+                      <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--silver-400)', margin: '2px 0 0', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <ShieldCheck size={10} /> {staffFor(w.id)!.permissions.length} permissions
+                      </p>
+                    )}
                     {w.createdAt && (
                       <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--silver-400)', margin: '2px 0 0' }}>
                         Depuis le {new Date(w.createdAt).toLocaleDateString()}
@@ -181,8 +281,12 @@ const Workers: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={() => setEditingWorker(w)} className="btn-icon" title="Modifier"><Edit2 size={15} /></button>
-                  <button onClick={() => { if (confirm(t.delete + ' ?')) deleteWorker(w.id); }} className="btn-icon danger" title="Supprimer"><Trash2 size={15} /></button>
+                  {can('workers.edit') && (
+                    <button onClick={() => setEditingWorker(w)} className="btn-icon" title="Modifier"><Edit2 size={15} /></button>
+                  )}
+                  {can('workers.delete') && (
+                    <button onClick={() => handleDeleteWorker(w)} className="btn-icon danger" title="Supprimer"><Trash2 size={15} /></button>
+                  )}
                 </div>
               </div>
 
@@ -323,28 +427,52 @@ const Workers: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Username + Password */}
+                  {/* Login — a real Supabase account, so the address must be
+                      one the employee can actually be identified by. */}
+                  <div>
+                    <label className="lux-label">Email de connexion</label>
+                    <div style={{ position: 'relative' }}>
+                      <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--silver-400)', pointerEvents: 'none' }} />
+                      <input
+                        name="email"
+                        type="email"
+                        required={!editingWorker}
+                        disabled={!!editingWorker}
+                        defaultValue={editingWorker ? (staffFor(editingWorker.id)?.email || '') : ''}
+                        placeholder="employe@exemple.com"
+                        className="lux-input"
+                        style={{ paddingLeft: 40, opacity: editingWorker ? 0.65 : 1 }}
+                      />
+                    </div>
+                    {editingWorker && (
+                      <p style={{ fontSize: 11, color: 'var(--silver-400)', margin: '6px 0 0' }}>
+                        {isAr ? 'لا يمكن تغيير البريد بعد الإنشاء.' : "L'email ne peut pas être modifié après la création."}
+                      </p>
+                    )}
+                  </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                     <div>
-                      <label className="lux-label">Identifiant</label>
+                      <label className="lux-label">Identifiant affiché</label>
                       <input
                         name="username"
-                        required
                         defaultValue={editingWorker?.username}
                         placeholder="nom_utilisateur"
                         className="lux-input"
                       />
                     </div>
                     <div>
-                      <label className="lux-label">Mot de passe</label>
+                      <label className="lux-label">
+                        {editingWorker ? 'Nouveau mot de passe' : 'Mot de passe'}
+                      </label>
                       <div style={{ position: 'relative' }}>
                         <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--silver-400)', pointerEvents: 'none' }} />
                         <input
                           name="password"
                           type="text"
-                          required
-                          defaultValue={editingWorker?.password}
-                          placeholder="••••••••"
+                          required={!editingWorker}
+                          minLength={editingWorker ? undefined : 6}
+                          placeholder={editingWorker ? 'Laisser vide pour conserver' : '6 caractères minimum'}
                           className="lux-input"
                           style={{ paddingLeft: 40 }}
                         />
@@ -377,14 +505,39 @@ const Workers: React.FC = () => {
                       className="lux-input"
                     />
                   </div>
+
+                  {/* ── Permissions ──
+                      What this employee may open and press. Everything not
+                      ticked here is hidden in their sidebar and refused by the
+                      database, so the two can never disagree. */}
+                  {can('workers.permissions.manage') && (
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 18 }}>
+                      <label className="lux-label" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <ShieldCheck size={15} style={{ color: 'var(--gold)' }} />
+                        Permissions — interfaces & actions
+                      </label>
+                      <PermissionEditor value={permissions} onChange={setPermissions} language={language} />
+                    </div>
+                  )}
+
+                  {formError && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+                      borderRadius: 10, padding: '10px 14px',
+                    }}>
+                      <AlertCircle size={15} style={{ color: 'var(--danger)', flexShrink: 0 }} />
+                      <p style={{ fontSize: 13, color: 'var(--danger)', margin: 0, fontWeight: 500 }}>{formError}</p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="modal-footer">
                   <button type="button" onClick={closeMainModals} className="btn-outline" style={{ padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
                     Annuler
                   </button>
-                  <button type="submit" className="btn-gold" style={{ padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                    Enregistrer
+                  <button type="submit" disabled={saving} className="btn-gold" style={{ padding: '10px 24px', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+                    {saving ? 'Enregistrement…' : 'Enregistrer'}
                   </button>
                 </div>
               </form>

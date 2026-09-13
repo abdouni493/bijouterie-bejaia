@@ -4,10 +4,13 @@ Application de gestion complète pour bijouterie : **or, argent et tout autre m�
 Stock, point de vente, ateliers, employés, trésorerie, rapports et boutique en ligne —
 en français et en arabe.
 
-Cette version fonctionne **entièrement hors ligne, sans base de données** : toutes les
-données proviennent d'un jeu de démonstration constant (`src/data/demoData.ts`) chargé
-en mémoire au démarrage. Chaque écran est pleinement interactif ; un rechargement de la
-page restaure le jeu de données d'origine.
+L'application est adossée à **Supabase** : authentification, base Postgres et stockage
+des images. Chaque employé possède un vrai compte, et l'administrateur choisit
+**écran par écran et bouton par bouton** ce que chacun peut voir et faire — la règle
+étant appliquée à la fois par l'interface et par la base (Row Level Security).
+
+Le schéma complet se trouve dans [`supabase/`](supabase/) — voir
+[`supabase/README.md`](supabase/README.md) pour l'installation.
 
 ## Démarrage
 
@@ -19,20 +22,30 @@ npm run dev      # http://localhost:3000
 npm run build    # build de production dans dist/
 ```
 
-### Se connecter
+### Premier démarrage
 
-Sur l'écran de connexion, cliquez sur **« Essayer la démo — compte Admin »** pour entrer
-directement avec un profil administrateur. Les identifiants suivants fonctionnent aussi :
-
-| Rôle          | Identifiant | Mot de passe |
-| ------------- | ----------- | ------------ |
-| Administrateur| `demo`      | `demo`       |
-| Administrateur| `admin`     | `admin`      |
-| Employé       | `amine`     | `amine123`   |
-| Employé       | `nadia`     | `nadia123`   |
-| Employé       | `rachid`    | `rachid123`  |
+1. Exécutez `supabase/00_complete_setup.sql` dans le SQL Editor du projet Supabase.
+2. Lancez l'application : l'écran de connexion propose **« Créer un compte
+   administrateur »**, car la boutique n'en a pas encore.
+3. Créez-le. Vous êtes connecté aussitôt, et **le bouton disparaît définitivement** :
+   l'interface le masque et la fonction `bootstrap_admin()` refuse tout second appel.
+4. **Employés → Nouvel employé** crée un compte Supabase pour chaque employé et
+   la liste à cocher de ses permissions.
 
 La boutique publique est accessible sans compte : `http://localhost:3000/?view=shop`.
+
+### Configuration
+
+Les identifiants du projet Supabase sont intégrés dans `src/lib/supabase.ts`. Pour
+viser un autre projet, définissez plutôt :
+
+```bash
+VITE_SUPABASE_URL=https://votre-projet.supabase.co
+VITE_SUPABASE_ANON_KEY=votre-cle-anon
+```
+
+La clé *anon* est publique par conception : chaque table est protégée par RLS, donc
+elle n'ouvre rien au-delà de ce que l'utilisateur connecté a le droit de faire.
 
 ## Modèle métier : métaux, types de stock, formes
 
@@ -56,7 +69,13 @@ Tout se gère dans **Catalogue** (métaux, formes, calibres) et **Gestion de Sto
 src/
   main.tsx                 point d'entrée
   App.tsx                  layout, routage par onglet
-  context/AppContext.tsx   store applicatif en mémoire (toutes les données + actions)
+  context/AppContext.tsx   store applicatif (toutes les données + actions), miroir Supabase
+  lib/
+    supabase.ts            client Supabase + envoi des images vers les buckets
+    auth.ts                connexion, création de comptes, permissions
+    permissions.ts         les 22 interfaces et tous les boutons, côté client
+    repository.ts          correspondance objets ↔ colonnes, pour chaque table
+    useSynced.ts           miroir état React → base de données
   data/
     demoData.ts            jeu de données de démonstration (remplace la base de données)
     algeriaWilayas.ts      wilayas et communes d'Algérie
@@ -78,8 +97,25 @@ src/
     settings/    paramètres
 ```
 
+## Permissions
+
+Chaque écran et chaque bouton porte une clé (`pos.view`, `purchases.delete`,
+`commands.finalize`, …). Les mêmes clés sont lues à trois endroits :
+
+- la barre latérale n'affiche un onglet que si `can('<module>.view')` ;
+- les boutons d'action sont masqués sans leur permission ;
+- **Postgres refuse l'écriture** même si l'API est appelée directement.
+
+L'interface ne fait que refléter la règle ; c'est la base qui l'applique. Un
+administrateur détient toujours l'ensemble des permissions.
+
+## Images
+
+Les photos ne sont plus encodées en base64 dans les enregistrements : elles sont
+envoyées dans des buckets Supabase (`store-logos`, `product-images`, `offer-images`,
+`order-images`) et les tables ne conservent que l'URL publique.
+
 ## Données
 
 - **Sauvegarde** — *Paramètres → Données* exporte un instantané JSON de l'état courant.
 - **Restauration** — le même écran réimporte un fichier exporté.
-- **Réinitialisation** — un bouton remet le jeu de démonstration d'origine.
