@@ -9,6 +9,34 @@ import {
 
 type Mode = 'login' | 'create-admin';
 
+/**
+ * A labelled input with an icon in the gutter.
+ *
+ * Declared at module scope on purpose. When a component is defined inside
+ * another component's body it is a brand-new function on every render, so React
+ * treats it as a different type, unmounts the old subtree and mounts a fresh
+ * one — which blurs the input after every single keystroke. Keeping it out here
+ * means the <input> instance survives re-renders and holds focus while typing.
+ */
+const Field: React.FC<{
+  label: string;
+  icon: React.ReactNode;
+  labelStyle: React.CSSProperties;
+  iconColor: string;
+  children: React.ReactNode;
+}> = ({ label, icon, labelStyle, iconColor, children }) => (
+  <div>
+    <label style={labelStyle}>{label}</label>
+    <div style={{ position: 'relative' }}>
+      <span style={{
+        position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)',
+        color: iconColor, pointerEvents: 'none', display: 'flex',
+      }}>{icon}</span>
+      {children}
+    </div>
+  </div>
+);
+
 const Login: React.FC = () => {
   const {
     language, settings, theme,
@@ -117,21 +145,6 @@ const Login: React.FC = () => {
   const focusOff = (e: React.FocusEvent<HTMLInputElement>) => {
     e.target.style.borderColor = isDark ? 'rgba(148,163,184,0.15)' : 'rgba(100,116,139,0.18)';
   };
-
-  const Field: React.FC<{
-    label: string; icon: React.ReactNode; children: React.ReactNode;
-  }> = ({ label, icon, children }) => (
-    <div>
-      <label style={labelStyle}>{label}</label>
-      <div style={{ position: 'relative' }}>
-        <span style={{
-          position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)',
-          color: textMuted, pointerEvents: 'none', display: 'flex',
-        }}>{icon}</span>
-        {children}
-      </div>
-    </div>
-  );
 
   const primaryButton = (label: string, busyLabel: string): React.ReactNode => (
     <motion.button
@@ -350,7 +363,7 @@ const Login: React.FC = () => {
                 {connectionBanner}
 
                 <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <Field label={isAr ? 'البريد الإلكتروني' : 'Adresse email'} icon={<Mail size={15} />}>
+                  <Field label={isAr ? 'البريد الإلكتروني' : 'Adresse email'} icon={<Mail size={15} />} labelStyle={labelStyle} iconColor={textMuted}>
                     <input
                       type="email" value={loginId} onChange={e => setLoginId(e.target.value)}
                       placeholder="vous@exemple.com" style={inputStyle}
@@ -359,7 +372,7 @@ const Login: React.FC = () => {
                     />
                   </Field>
 
-                  <Field label={isAr ? 'كلمة السر' : 'Mot de passe'} icon={<Lock size={15} />}>
+                  <Field label={isAr ? 'كلمة السر' : 'Mot de passe'} icon={<Lock size={15} />} labelStyle={labelStyle} iconColor={textMuted}>
                     <input
                       type={showPwd ? 'text' : 'password'}
                       value={loginPwd} onChange={e => setLoginPwd(e.target.value)}
@@ -490,7 +503,7 @@ const Login: React.FC = () => {
                 </div>
 
                 <form onSubmit={handleCreateAdmin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <Field label={isAr ? 'الاسم الكامل' : 'Nom complet'} icon={<UserIcon size={15} />}>
+                  <Field label={isAr ? 'الاسم الكامل' : 'Nom complet'} icon={<UserIcon size={15} />} labelStyle={labelStyle} iconColor={textMuted}>
                     <input
                       type="text" value={adminName} onChange={e => setAdminName(e.target.value)}
                       placeholder={isAr ? 'المدير' : 'Administrateur'} style={inputStyle}
@@ -498,7 +511,7 @@ const Login: React.FC = () => {
                     />
                   </Field>
 
-                  <Field label={isAr ? 'البريد الإلكتروني' : 'Adresse email'} icon={<Mail size={15} />}>
+                  <Field label={isAr ? 'البريد الإلكتروني' : 'Adresse email'} icon={<Mail size={15} />} labelStyle={labelStyle} iconColor={textMuted}>
                     <input
                       type="email" value={adminEmail} onChange={e => setAdminEmail(e.target.value)}
                       placeholder="vous@exemple.com" style={inputStyle}
@@ -506,7 +519,7 @@ const Login: React.FC = () => {
                     />
                   </Field>
 
-                  <Field label={isAr ? 'كلمة السر' : 'Mot de passe'} icon={<Lock size={15} />}>
+                  <Field label={isAr ? 'كلمة السر' : 'Mot de passe'} icon={<Lock size={15} />} labelStyle={labelStyle} iconColor={textMuted}>
                     <input
                       type={showPwd ? 'text' : 'password'}
                       value={adminPwd} onChange={e => setAdminPwd(e.target.value)}
@@ -527,7 +540,7 @@ const Login: React.FC = () => {
                     </button>
                   </Field>
 
-                  <Field label={isAr ? 'تأكيد كلمة السر' : 'Confirmer le mot de passe'} icon={<Lock size={15} />}>
+                  <Field label={isAr ? 'تأكيد كلمة السر' : 'Confirmer le mot de passe'} icon={<Lock size={15} />} labelStyle={labelStyle} iconColor={textMuted}>
                     <input
                       type={showPwd ? 'text' : 'password'}
                       value={adminPwd2} onChange={e => setAdminPwd2(e.target.value)}

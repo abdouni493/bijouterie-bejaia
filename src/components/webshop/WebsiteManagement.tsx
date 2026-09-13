@@ -1771,6 +1771,43 @@ const DeliveryTab: React.FC = () => {
 
 // ─── CONTACTS TAB ─────────────────────────────────────────────────────────────
 
+/**
+ * One contact row: icon, label and its input.
+ *
+ * Kept at module scope deliberately — a component declared inside another
+ * component's body is a new function type on every render, so React tears the
+ * <input> down and builds a fresh one after each keystroke, losing focus. The
+ * value and handler come in as props instead of being closed over.
+ */
+const ContactField: React.FC<{
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  color?: string;
+}> = ({ icon: Icon, label, value, onChange, placeholder, color = 'var(--gold)' }) => (
+  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+    <div style={{
+      width: 42, height: 42, borderRadius: 12, flexShrink: 0, marginTop: 22,
+      background: `${color}1A`, border: `1px solid ${color}33`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <Icon size={17} color={color} />
+    </div>
+    <div style={{ flex: 1 }}>
+      <label className="lux-label">{label}</label>
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder || ''}
+        className="lux-input"
+        style={{ marginTop: 6 }}
+      />
+    </div>
+  </div>
+);
+
 const ContactsTab: React.FC = () => {
   const { webContacts, updateWebContacts } = useApp();
   const [form, setForm] = useState({ ...webContacts });
@@ -1782,30 +1819,6 @@ const ContactsTab: React.FC = () => {
     setTimeout(() => setSaved(false), 3000);
   };
 
-  const ContactField = ({
-    icon: Icon, label, field, placeholder, color = 'var(--gold)',
-  }: { icon: React.ElementType; label: string; field: keyof typeof form; placeholder?: string; color?: string }) => (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-      <div style={{
-        width: 42, height: 42, borderRadius: 12, flexShrink: 0, marginTop: 22,
-        background: `${color}1A`, border: `1px solid ${color}33`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Icon size={17} color={color} />
-      </div>
-      <div style={{ flex: 1 }}>
-        <label className="lux-label">{label}</label>
-        <input
-          value={(form[field] as string) || ''}
-          onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
-          placeholder={placeholder || ''}
-          className="lux-input"
-          style={{ marginTop: 6 }}
-        />
-      </div>
-    </div>
-  );
-
   return (
     <div style={{ maxWidth: 600 }}>
       <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--silver-100)', marginBottom: 20 }}>Contacts & Réseaux Sociaux</h2>
@@ -1814,20 +1827,20 @@ const ContactsTab: React.FC = () => {
         <div style={{ marginBottom: 8 }}>
           <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--silver-400)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 14px' }}>Réseaux sociaux</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <ContactField icon={Facebook} label="Facebook" field="facebook" placeholder="https://facebook.com/..." color="#1877F2" />
-            <ContactField icon={Instagram} label="Instagram" field="instagram" placeholder="https://instagram.com/..." color="#E1306C" />
-            <ContactField icon={Globe} label="TikTok" field="tiktok" placeholder="https://tiktok.com/@..." color="#010101" />
-            <ContactField icon={Globe} label="Snapchat" field="snapchat" placeholder="https://snapchat.com/add/..." color="#FFFC00" />
+            <ContactField icon={Facebook} label="Facebook" value={(form.facebook as string) || ''} onChange={v => setForm(f => ({ ...f, facebook: v }))} placeholder="https://facebook.com/..." color="#1877F2" />
+            <ContactField icon={Instagram} label="Instagram" value={(form.instagram as string) || ''} onChange={v => setForm(f => ({ ...f, instagram: v }))} placeholder="https://instagram.com/..." color="#E1306C" />
+            <ContactField icon={Globe} label="TikTok" value={(form.tiktok as string) || ''} onChange={v => setForm(f => ({ ...f, tiktok: v }))} placeholder="https://tiktok.com/@..." color="#010101" />
+            <ContactField icon={Globe} label="Snapchat" value={(form.snapchat as string) || ''} onChange={v => setForm(f => ({ ...f, snapchat: v }))} placeholder="https://snapchat.com/add/..." color="#FFFC00" />
           </div>
         </div>
 
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 18, marginTop: 10 }}>
           <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--silver-400)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 14px' }}>Contact direct</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <ContactField icon={Send} label="Telegram" field="telegram" placeholder="https://t.me/..." color="#2CA5E0" />
-            <ContactField icon={PhoneCall} label="WhatsApp" field="whatsapp" placeholder="+213..." color="#25D366" />
-            <ContactField icon={Mail} label="Email" field="email" placeholder="contact@..." color="var(--gold)" />
-            <ContactField icon={PhoneCall} label="Téléphone" field="phone" placeholder="0555..." />
+            <ContactField icon={Send} label="Telegram" value={(form.telegram as string) || ''} onChange={v => setForm(f => ({ ...f, telegram: v }))} placeholder="https://t.me/..." color="#2CA5E0" />
+            <ContactField icon={PhoneCall} label="WhatsApp" value={(form.whatsapp as string) || ''} onChange={v => setForm(f => ({ ...f, whatsapp: v }))} placeholder="+213..." color="#25D366" />
+            <ContactField icon={Mail} label="Email" value={(form.email as string) || ''} onChange={v => setForm(f => ({ ...f, email: v }))} placeholder="contact@..." color="var(--gold)" />
+            <ContactField icon={PhoneCall} label="Téléphone" value={(form.phone as string) || ''} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="0555..." />
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
               <div style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, marginTop: 22, background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <MapPin size={17} color="var(--gold)" />
