@@ -7,7 +7,7 @@ import { translations } from '../../i18n/translations';
 import { JewelryShape } from '../../types';
 
 const POS: React.FC = () => {
-  const { metalTypes, addSale, user, language, shapes, settings, clients, addClientPayment, categoryLabel } = useApp();
+  const { metalTypes, addSale, user, language, shapes, settings, clients, addClientPayment, categoryLabel, can } = useApp();
   const t = translations[language];
 
   const importedType = metalTypes.find(st => {
@@ -617,7 +617,7 @@ const POS: React.FC = () => {
             className="btn-silver"
             whileHover={{ scale: 1.02, boxShadow: '0 8px 30px rgba(192,200,212,0.25)' }}
             whileTap={{ scale: 0.97 }}
-            style={{ width: '100%', height: 56, borderRadius: 14, fontSize: 16, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, cursor: 'pointer', letterSpacing: '-0.02em' }}
+            style={{ width: '100%', height: 56, borderRadius: 14, fontSize: 16, fontWeight: 800, display: can('pos.create') ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', gap: 12, cursor: 'pointer', letterSpacing: '-0.02em' }}
           >
             <ShoppingBag size={22} />
             {t.createInvoice}
@@ -734,7 +734,7 @@ const POS: React.FC = () => {
                 <button
                   onClick={handlePrint}
                   className="btn-gold"
-                  style={{ flex: 1, height: 44, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                  style={{ flex: 1, height: 44, borderRadius: 10, display: can('pos.print') ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
                 >
                   <Printer size={16} />
                   {t.print}

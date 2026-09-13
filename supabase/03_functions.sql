@@ -47,7 +47,7 @@ begin
     is_super_admin, is_sso_user
   ) values (
     '00000000-0000-0000-0000-000000000000', v_uid, 'authenticated', 'authenticated',
-    v_email, extensions.crypt(p_password, extensions.gen_salt('bf')),
+    v_email, crypt(p_password, gen_salt('bf')),
     now(), now(), now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
     jsonb_build_object('username', p_username),
@@ -208,7 +208,7 @@ begin
   end if;
 
   update auth.users
-     set encrypted_password = extensions.crypt(p_password, extensions.gen_salt('bf')),
+     set encrypted_password = crypt(p_password, gen_salt('bf')),
          updated_at = now()
    where id = p_user_id;
 

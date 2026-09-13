@@ -6,8 +6,11 @@
 --  Run in order: 01_schema → 02_tables → 03_functions → 04_rls → 05_storage → 06_seed
 -- ════════════════════════════════════════════════════════════════════════════
 
-create extension if not exists "pgcrypto";
-create extension if not exists "uuid-ossp";
+-- Supabase ships pgcrypto in the `extensions` schema; pin it there so the
+-- password hashing in 03_functions.sql (extensions.crypt / gen_salt) resolves
+-- whether or not the extension was already installed.
+create schema if not exists extensions;
+create extension if not exists "pgcrypto" with schema extensions;
 
 -- ─── ENUMS ──────────────────────────────────────────────────────────────────
 do $enum$ begin create type app_role            as enum ('admin','worker');                                                    exception when duplicate_object then null; end $enum$;

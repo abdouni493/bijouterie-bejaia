@@ -19,6 +19,8 @@
 
 
 
+
+
 -- ###########################################################################
 -- ###  FILE: 01_schema.sql
 -- ###########################################################################
@@ -31,8 +33,11 @@
 --  Run in order: 01_schema → 02_tables → 03_functions → 04_rls → 05_storage → 06_seed
 -- ════════════════════════════════════════════════════════════════════════════
 
-create extension if not exists "pgcrypto";
-create extension if not exists "uuid-ossp";
+-- Supabase ships pgcrypto in the `extensions` schema; pin it there so the
+-- password hashing in 03_functions.sql (extensions.crypt / gen_salt) resolves
+-- whether or not the extension was already installed.
+create schema if not exists extensions;
+create extension if not exists "pgcrypto" with schema extensions;
 
 -- ─── ENUMS ──────────────────────────────────────────────────────────────────
 do $enum$ begin create type app_role            as enum ('admin','worker');                                                    exception when duplicate_object then null; end $enum$;
@@ -801,7 +806,7 @@ begin
     is_super_admin, is_sso_user
   ) values (
     '00000000-0000-0000-0000-000000000000', v_uid, 'authenticated', 'authenticated',
-    v_email, extensions.crypt(p_password, extensions.gen_salt('bf')),
+    v_email, crypt(p_password, gen_salt('bf')),
     now(), now(), now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
     jsonb_build_object('username', p_username),
@@ -962,7 +967,7 @@ begin
   end if;
 
   update auth.users
-     set encrypted_password = extensions.crypt(p_password, extensions.gen_salt('bf')),
+     set encrypted_password = crypt(p_password, gen_salt('bf')),
          updated_at = now()
    where id = p_user_id;
 
